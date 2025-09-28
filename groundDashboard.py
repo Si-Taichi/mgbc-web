@@ -1,0 +1,621 @@
+from dash import Dash, dcc, html, Input, Output, dash_table
+import plotly.graph_objects as go
+import requests
+import threading
+import time
+import random
+import traceback
+import math
+
+app = Dash(__name__, update_title=None, title='kits board UGCS')
+
+def init_board_data():
+    return {
+        "x": [], "y": [], "z": [],
+        "lat": [], "lon": [],
+        "Tempurature": [], "Pressure": [], "Humidity": [],
+        "speed": [], "alt": [],
+        "parachute_deployed": [],
+        "time": []
+    }
+
+all_board = []
+board_list = {}
+start_time = time.time()
+num_boards = 6  # Will be updated dynamically from API
+board_names = {}  # Will be populated from API
+prediction_memory = {}  # Store predictions: {board_id: predicted_apogee_value}
+
+def latlon_to_xy(lat0, lon0, lat, lon):
+    """Convert lat/lon to local x,y in meters relative to lat0,lon0"""
+    R = 6371000.0  # Earth radius in meters
+    dlat = math.radians(lat - lat0)
+    dlon = math.radians(lon - lon0)
+    x = dlon * R * math.cos(math.radians((lat + lat0) / 2.0))
+    y = dlat * R
+    return x, y
+
+def elapsed_seconds():
+    return time.time() - start_time
+
+def parse_csv_string(csv_string):
+    parts = csv_string.strip().split(",")
+    if len(parts) != 11:  # Updated to expect 11 parts now
+        print(f"amount of data not equal to 11, got {len(parts)}")
+        return None
+    return {
+        "LIS331DLH axis x": [float(parts[0])],
+        "LIS331DLH axis y": [float(parts[1])],
+        "LIS331DLH axis z": [float(parts[2])],
+        "lc86g lat": [float(parts[3])],
+        "lc86g lon": [float(parts[4])],
+        "bme tempurature": [float(parts[5])],
+        "bme pressure": [float(parts[6])],
+        "bme humidity": [float(parts[7])],
+        "lc86g speed": [float(parts[8])],
+        "lc86g alt": [float(parts[9])],
+        "parachute_deployed": [int(parts[10])]
+    }
+
+def get_api_config():
+    """Get configuration from API server"""
+    global num_boards, board_names
+    try:
+        r = requests.get("http://localhost:5000/status", timeout=5)
+        if r.status_code == 200:
+            data = r.json()
+            num_boards = data.get("configured_boards", 6)
+            board_names = data.get("board_names", {})
+            print(f"✅ Retrieved API config: {num_boards} boards")
+            return True
+    except Exception as e:
+        print(f"⚠️ Could not get API config: {e}, using defaults")
+        num_boards = 6
+        board_names = {str(i): f"Board {i}" for i in range(num_boards)}
+    return False
+
+def data_fetcher_all():
+    global all_board, board_list, num_boards, board_names
+    
+    # Get initial configuration
+    get_api_config()
+    
+    while True:
+        try:
+            # Use the API server
+            url = "http://localhost:5000/gcs/all"
+            r = requests.get(url, timeout=10)
+            if r.status_code == 200:
+                data = r.json()  # {"0": "...", "1": "..."}
+                
+                # Update num_boards based on actual data received
+                received_boards = len(data)
+                if received_boards != num_boards:
+                    print(f"📊 Board count updated: {num_boards} → {received_boards}")
+                    num_boards = received_boards
+                
+                print(f"✅ API Success: Received data for {received_boards} devices {list(data.keys())}")
+            else:
+                print(f"❌ API error: {r.status_code}")
+                time.sleep(2)
+                continue
+
+            # process data
+            all_board = []
+            for board_id, csv_string in data.items():
+                v = parse_csv_string(csv_string)
+                if not v:
+                    continue
+                all_board.append(v)
+
+                if board_id not in board_list:
+                    board_list[board_id] = init_board_data()
+
+                board_list[board_id]["x"].append(v["LIS331DLH axis x"][0])
+                board_list[board_id]["y"].append(v["LIS331DLH axis y"][0])
+                board_list[board_id]["z"].append(v["LIS331DLH axis z"][0])
+                board_list[board_id]["lat"].append(v["lc86g lat"][0])
+                board_list[board_id]["lon"].append(v["lc86g lon"][0])
+                board_list[board_id]["Tempurature"].append(v["bme tempurature"][0])
+                board_list[board_id]["Pressure"].append(v["bme pressure"][0])
+                board_list[board_id]["Humidity"].append(v["bme humidity"][0])
+                board_list[board_id]["speed"].append(v["lc86g speed"][0])
+                board_list[board_id]["alt"].append(v["lc86g alt"][0])
+                board_list[board_id]["parachute_deployed"].append(v["parachute_deployed"][0])
+                board_list[board_id]["time"].append(elapsed_seconds())
+
+        except Exception as e:
+            print(f"❌ Fetcher crashed: {repr(e)}")
+            traceback.print_exc()
+
+        time.sleep(1)
+
+def clamp_lat_lon(lat, lon):
+    # keep values inside valid ranges
+    lat = max(min(lat, 90.0), -90.0)
+    lon = ((lon + 180.0) % 360.0) - 180.0
+    return lat, lon
+
+def generate_board_options():
+    """Generate board options dynamically"""
+    options = []
+    for i in range(num_boards):
+        board_name = board_names.get(str(i), f"Board {i}")
+        options.append({"label": board_name, "value": str(i)})
+    return options
+
+# Start background thread
+print("🚀 Starting groundboard in API mode...")
+print("📡 Will connect to API server at: http://localhost:5000/gcs/all")
+threading.Thread(target=data_fetcher_all, daemon=True).start()
+
+# Create figures
+fig2d = go.Figure()
+fig2d.update_layout(title="Temperature, Pressure, Humidity",
+                    xaxis_title="Reading #", yaxis_title="Value")
+
+fig_speed = go.Figure()
+fig_speed.update_layout(title="Speed Over Time",
+                       xaxis_title="Time (seconds)", yaxis_title="Speed (m/s)")
+
+fig_alt = go.Figure()
+fig_alt.update_layout(title="Altitude Over Time",
+                     xaxis_title="Time (seconds)", yaxis_title="Altitude (m)")
+
+fig_accel = go.Figure()
+fig_accel.update_layout(title="Accelerometer Data (LIS331DLH)",
+                       xaxis_title="Time (seconds)", yaxis_title="Acceleration (g)")
+
+fig3d = go.Figure()
+figgeo = go.Figure()
+
+fig3d.update_layout(scene=dict(aspectmode="auto",bgcolor="#102c55"),
+                    margin=dict(l=0, r=0, t=30, b=0),
+                    title="Rocket 3D Trajectory")
+
+figgeo.update_layout(
+    geo=dict(projection=dict(type="orthographic")),
+    title="Latitude Longitude Position")
+
+# Layout with dynamic board count
+app.layout = html.Div([
+    html.H1("Universal Ground Control System", style={"textAlign": "center", "color" : "white"}),
+    
+    # API Status indicator
+    html.Div([
+        html.P("📡 API Mode: Receiving data from http://localhost:5000/gcs/all", 
+               style={"color": "lime", "textAlign": "center", "fontSize": "14px", "margin": "10px"}),
+        html.P("Make sure the API server is running!", 
+               style={"color": "yellow", "textAlign": "center", "fontSize": "12px", "margin": "5px"}),
+        html.P(id="board-count-display", children="Loading board configuration...",
+               style={"color": "cyan", "textAlign": "center", "fontSize": "12px", "margin": "5px"}),
+    ]),
+    
+    # Control Panel Row
+    html.Div([
+        html.Div([
+            html.Label("Select board to view", style={"color" : "white"}),
+            dcc.Dropdown(
+                id="board-select",
+                options=[],  # Will be populated dynamically
+                value="0",
+                clearable=False,
+                style={"width": "200px"}
+            )
+        ], style={"padding" : "20px", "flex": "1"}),
+        
+        html.Div([
+            html.Label("Select BME Metric:", style={"color" : "white"}),
+            dcc.Dropdown(
+                id="bme-dropdown",
+                options=[
+                    {"label": "Temperature", "value": "Tempurature"},
+                    {"label": "Pressure", "value": "Pressure"},
+                    {"label": "Humidity", "value": "Humidity"}
+                ],
+                value="Tempurature", clearable=False,
+                style={"width": "200px"}
+            ),
+        ], style={"padding" : "20px", "flex": "1"}),
+        
+        # Apogee Prediction Input with memory
+        html.Div([
+            html.Label("Predicted Apogee (m):", style={"color": "white"}),
+            dcc.Input(
+                id="predicted-apogee-input",
+                type="number",
+                value=1000,
+                placeholder="Enter predicted apogee",
+                style={"width": "150px", "margin": "5px"}
+            ),
+            html.Label("Board for prediction:", style={"color": "white", "marginTop": "10px"}),
+            dcc.Dropdown(
+                id="prediction-board-select",
+                options=[],  # Will be populated dynamically
+                value="0",
+                clearable=False,
+                style={"width": "150px"}
+            ),
+            html.Button("Save Prediction", id="save-prediction-btn", 
+                       style={"backgroundColor": "#4CAF50", "color": "white", "border": "none", 
+                             "padding": "8px 16px", "marginTop": "10px", "borderRadius": "4px"}),
+            html.Div(id="prediction-status", style={"color": "lime", "fontSize": "12px", "marginTop": "5px"})
+        ], style={"padding": "20px", "flex": "1"}),
+    ], style={"display": "flex", "gap": "20px"}),
+    
+    # Status Board with prediction memory
+    html.Div([
+        html.H2("Flight Status Board", style={"textAlign": "center", "color": "white"}),
+        dash_table.DataTable(
+            id="status-board",
+            columns=[
+                {"name": "Board", "id": "board"},
+                {"name": "Status", "id": "status"},
+                {"name": "Altitude (m)", "id": "current_alt"},
+                {"name": "Max Alt (m)", "id": "max_alt"},
+                {"name": "Parachute", "id": "parachute"},
+                {"name": "Predicted", "id": "predicted"},
+                {"name": "Difference", "id": "apogee_diff"}
+            ],
+            style_table={"overflowX": "auto"},
+            style_header={
+                "backgroundColor": "#1c3c6e",
+                "color": "white",
+                "fontWeight": "bold",
+                "textAlign": "center"
+            },
+            style_cell={
+                "backgroundColor": "#102c55",
+                "color": "white",
+                "textAlign": "center",
+                "padding": "12px"
+            },
+            style_data_conditional=[
+                {
+                    'if': {'filter_query': '{parachute} = Deployed'},
+                    'backgroundColor': '#0e4b99',
+                    'color': 'lime',
+                },
+                {
+                    'if': {'filter_query': '{status} = apogee'},
+                    'backgroundColor': '#8B0000',
+                    'color': 'yellow',
+                }
+            ]
+        )
+    ], style={"padding" : "15px"}),
+
+    # Row 1: BME + Accelerometer
+    html.Div([
+        dcc.Graph(id="2d-bmestats", figure=fig2d,
+                  style={"height": "350px", "flex": "1", "borderRadius": "1px solid gray", 
+                         "padding": "10px", "boxShadow": "0 4px 10px rgba(0,0,0,0.1)"}),
+        dcc.Graph(id="accelerometer-chart", figure=fig_accel,
+                  style={"height": "350px", "flex": "1", "borderRadius": "1px solid gray", 
+                         "padding": "10px", "boxShadow": "0 4px 10px rgba(0,0,0,0.1)"}),
+    ], style={"display": "flex", "gap": "20px", "marginBottom": "20px"}),
+
+    # Row 2: Speed + Altitude (separate graphs)
+    html.Div([
+        dcc.Graph(id="speed-chart", figure=fig_speed,
+                  style={"height": "350px", "flex": "1", "borderRadius": "1px solid gray", 
+                         "padding": "10px", "boxShadow": "0 4px 10px rgba(0,0,0,0.1)"}),
+        dcc.Graph(id="altitude-chart", figure=fig_alt,
+                  style={"height": "350px", "flex": "1", "borderRadius": "1px solid gray", 
+                         "padding": "10px", "boxShadow": "0 4px 10px rgba(0,0,0,0.1)"}),
+    ], style={"display": "flex", "gap": "20px", "marginBottom": "20px"}),
+
+    # Row 3: 3D Trajectory + Globe
+    html.Div([
+        dcc.Graph(id="3d-trajectory", figure=fig3d,
+                  style={"height": "400px", "flex": "1", "borderRadius": "1px solid gray", 
+                         "padding": "10px", "boxShadow": "0 4px 10px rgba(0,0,0,0.1)"}),
+        dcc.Graph(id="globe-latlon", figure=figgeo,
+                  style={"height": "400px", "flex": "1", "borderRadius": "1px solid gray", 
+                         "padding": "10px", "boxShadow": "0 4px 10px rgba(0,0,0,0.1)"}),
+    ], style={"display": "flex", "gap": "10px"}),
+
+    # Hidden div to store prediction memory
+    html.Div(id="prediction-memory-store", style={"display": "none"}),
+    
+    dcc.Interval(id="interval", interval=800, n_intervals=0)
+])
+
+# Callback to save predictions
+@app.callback(
+    Output("prediction-status", "children"),
+    Output("prediction-memory-store", "children"),
+    Input("save-prediction-btn", "n_clicks"),
+    Input("predicted-apogee-input", "value"),
+    Input("prediction-board-select", "value"),
+    prevent_initial_call=True
+)
+def save_prediction(n_clicks, predicted_apogee, board_id):
+    global prediction_memory
+    if n_clicks and predicted_apogee and board_id is not None:
+        prediction_memory[board_id] = predicted_apogee
+        board_name = board_names.get(board_id, f"Board {board_id}")
+        status_msg = f"✅ Saved prediction: {predicted_apogee}m for {board_name}"
+        return status_msg, str(prediction_memory)
+    return "", str(prediction_memory)
+
+# Callback to update dropdown options dynamically
+@app.callback(
+    Output("board-select", "options"),
+    Output("prediction-board-select", "options"),
+    Output("board-count-display", "children"),
+    Input("interval", "n_intervals")
+)
+def update_board_options(n):
+    options = generate_board_options()
+    count_msg = f"📊 System: {num_boards} boards configured and active"
+    return options, options, count_msg
+
+# Updated main callback with prediction memory
+@app.callback(
+    Output("2d-bmestats", "figure"),
+    Output("accelerometer-chart", "figure"),
+    Output("speed-chart", "figure"),
+    Output("altitude-chart", "figure"),
+    Output("3d-trajectory", "figure"),
+    Output("globe-latlon", "figure"),
+    Output("status-board", "data"),
+    Input("interval", "n_intervals"),
+    Input("board-select", "value"),
+    Input("bme-dropdown", "value"),
+    Input("predicted-apogee-input", "value"),
+    Input("prediction-board-select", "value")
+)
+def update_charts(n, selected_board, selected_metric, predicted_apogee, prediction_board):
+    if selected_board not in board_list or len(board_list[selected_board]["x"]) == 0:
+        return go.Figure(), go.Figure(), go.Figure(), go.Figure(), go.Figure(), go.Figure(), []
+
+    board_data = board_list[selected_board]
+
+    # Status Board Data with prediction memory
+    status_rows = []
+    for bid, bdata in board_list.items():
+        if not bdata["alt"] or not bdata["speed"]:
+            continue
+
+        # Determine current status based on recent data
+        recent_alts = bdata["alt"][-5:] if len(bdata["alt"]) >= 5 else bdata["alt"]
+        recent_speeds = bdata["speed"][-5:] if len(bdata["speed"]) >= 5 else bdata["speed"]
+        current_alt = bdata["alt"][-1]
+        max_alt = max(bdata["alt"])
+        current_speed = bdata["speed"][-1]
+        parachute_status = "Deployed" if bdata["parachute_deployed"][-1] == 1 else "Not Deployed"
+        
+        # Determine flight phase
+        if max_alt < 100:
+            status = "waiting/launch"
+        elif current_speed < 5 and current_alt > max_alt * 0.9:
+            status = "apogee"
+        elif current_alt < max_alt * 0.8 and current_speed > 20:
+            status = "descent"
+        elif current_alt > max_alt * 0.5:
+            status = "ascent"
+        else:
+            status = "landed"
+        
+        # Get stored prediction for this board
+        stored_prediction = prediction_memory.get(bid, None)
+        predicted_display = f"{stored_prediction}m" if stored_prediction else "Not set"
+        
+        # Calculate prediction difference
+        apogee_diff = "N/A"
+        if stored_prediction:
+            try:
+                diff = max_alt - float(stored_prediction)
+                apogee_diff = f"{diff:+.1f}m"
+                if abs(diff) < 50:
+                    apogee_diff = f"🎯{apogee_diff}"  # Good prediction
+                elif diff > 0:
+                    apogee_diff = f"📈{apogee_diff}"  # Over-performed
+                else:
+                    apogee_diff = f"📉{apogee_diff}"  # Under-performed
+            except:
+                apogee_diff = "Error"
+
+        board_name = board_names.get(bid, f"Board {bid}")
+        status_rows.append({
+            "board": board_name,
+            "status": status,
+            "current_alt": f"{current_alt:.1f}",
+            "max_alt": f"{max_alt:.1f}",
+            "parachute": parachute_status,
+            "predicted": predicted_display,
+            "apogee_diff": apogee_diff
+        })
+
+    # BME Chart
+    fig2d = go.Figure(go.Scatter(
+        y=board_data[selected_metric],
+        x=board_data["time"],
+        mode="lines+markers",
+        line=dict(color="brown")
+    ))
+    unit = {"Tempurature": " (°C)", "Pressure": " (Pa)", "Humidity": " (%)"}
+    selected_board_name = board_names.get(selected_board, f"Board {selected_board}")
+    fig2d.update_layout(
+        title=f"{selected_metric} Over Time ({selected_board_name})",
+        xaxis_title="Time (seconds)",
+        yaxis_title=selected_metric + unit.get(selected_metric, ""),
+        plot_bgcolor="#102c55", paper_bgcolor="#102c55", font=dict(color="white")
+    )
+
+    # Accelerometer Chart
+    fig_accel = go.Figure()
+    fig_accel.add_trace(go.Scatter(
+        y=board_data["x"],
+        x=board_data["time"],
+        mode="lines+markers",
+        name="X-axis",
+        line=dict(color="red")
+    ))
+    fig_accel.add_trace(go.Scatter(
+        y=board_data["y"],
+        x=board_data["time"],
+        mode="lines+markers",
+        name="Y-axis",
+        line=dict(color="green")
+    ))
+    fig_accel.add_trace(go.Scatter(
+        y=board_data["z"],
+        x=board_data["time"],
+        mode="lines+markers",
+        name="Z-axis",
+        line=dict(color="blue")
+    ))
+    fig_accel.update_layout(
+        title=f"Accelerometer Data ({selected_board_name})",
+        xaxis_title="Time (seconds)",
+        yaxis_title="Acceleration (g)",
+        plot_bgcolor="#102c55", paper_bgcolor="#102c55", font=dict(color="white")
+    )
+
+    # Speed Chart
+    fig_speed = go.Figure(go.Scatter(
+        y=board_data["speed"],
+        x=board_data["time"],
+        mode="lines+markers",
+        name="Speed",
+        line=dict(color="orange")
+    ))
+    fig_speed.update_layout(
+        title=f"Speed Over Time ({selected_board_name})",
+        xaxis_title="Time (seconds)",
+        yaxis_title="Speed (m/s)",
+        plot_bgcolor="#102c55", paper_bgcolor="#102c55", font=dict(color="white")
+    )
+
+    # Altitude Chart with all saved prediction lines
+    fig_alt = go.Figure()
+    fig_alt.add_trace(go.Scatter(
+        y=board_data["alt"],
+        x=board_data["time"],
+        mode="lines+markers",
+        name="Altitude",
+        line=dict(color="cyan", width=3)
+    ))
+    
+    # Add prediction line for the selected board if it has a saved prediction
+    stored_prediction = prediction_memory.get(selected_board, None)
+    if stored_prediction:
+        try:
+            max_time = max(board_data["time"]) if board_data["time"] else 100
+            fig_alt.add_hline(
+                y=float(stored_prediction), 
+                line_dash="dash", 
+                line_color="yellow",
+                line_width=2,
+                annotation_text=f"Predicted: {stored_prediction}m"
+            )
+        except:
+            pass
+    
+    # Add current input prediction line if different from stored
+    if predicted_apogee and prediction_board == selected_board:
+        if not stored_prediction or float(predicted_apogee) != stored_prediction:
+            try:
+                fig_alt.add_hline(
+                    y=float(predicted_apogee), 
+                    line_dash="dot", 
+                    line_color="orange",
+                    line_width=1,
+                    annotation_text=f"Current Input: {predicted_apogee}m"
+                )
+            except:
+                pass
+    
+    fig_alt.update_layout(
+        title=f"Altitude Over Time ({selected_board_name})",
+        xaxis_title="Time (seconds)",
+        yaxis_title="Altitude (m)",
+        plot_bgcolor="#102c55", paper_bgcolor="#102c55", font=dict(color="white")
+    )
+
+    # 3D Trajectory
+    if len(board_data["lat"]) > 1:
+        lat0, lon0 = board_data["lat"][0], board_data["lon"][0]
+        xs, ys, zs = [], [], []
+        for la, lo, al in zip(board_data["lat"], board_data["lon"], board_data["alt"]):
+            x, y = latlon_to_xy(lat0, lon0, la, lo)
+            xs.append(x)
+            ys.append(y)
+            zs.append(al)
+    else:
+        xs, ys, zs = board_data["x"], board_data["y"], board_data["z"]
+
+    fig3d = go.Figure(go.Scatter3d(
+        x=xs, y=ys, z=zs,
+        mode="lines+markers",
+        name=selected_board_name,
+        line=dict(color="blue"),
+        marker=dict(size=4, color="red")
+    ))
+    fig3d.update_layout(
+        scene=dict(
+            xaxis_title="East-West (m)",
+            yaxis_title="North-South (m)",
+            zaxis_title="Altitude (m)",
+            aspectmode="auto",
+            bgcolor="#102c55"
+        ),
+        margin=dict(l=0, r=0, t=80, b=0),
+        title=f"Rocket 3D Trajectory ({selected_board_name})",
+        paper_bgcolor="#102c55",
+        font=dict(color="white")
+    )
+
+    # Globe View - show all boards
+    figgeo = go.Figure()
+    for bid, bdata in board_list.items():
+        if len(bdata["lat"]) > 1 and bid != selected_board:
+            board_name = board_names.get(bid, f"Board {bid}")
+            figgeo.add_trace(go.Scattergeo(
+                lon=bdata["lon"],
+                lat=bdata["lat"],
+                mode="lines+markers",
+                name=board_name,
+                line=dict(width=1),
+                marker=dict(size=4),
+                opacity=0.6
+            ))
+
+    figgeo.add_trace(go.Scattergeo(
+        lon=board_data["lon"],
+        lat=board_data["lat"],
+        mode="lines+markers",
+        name=f"{selected_board_name} (selected)",
+        line=dict(width=3),
+        marker=dict(size=7)
+    ))
+    
+    if board_data["lat"] and board_data["lon"]:
+        last_lat = board_data["lat"][-1]
+        last_lon = board_data["lon"][-1]
+        figgeo.update_geos(
+            projection_type="orthographic",
+            projection_rotation=dict(lat=last_lat, lon=last_lon),
+            showland=True, landcolor="lightgray",
+            showcountries=True,
+            showocean=True, oceancolor="lightblue"
+        )
+    
+    figgeo.update_layout(
+        title="Latitude Longitude Position", 
+        uirevision="stay",
+        paper_bgcolor="#102c55",
+        font=dict(color="white")
+    )
+
+    return fig2d, fig_accel, fig_speed, fig_alt, fig3d, figgeo, status_rows
+
+if __name__ == "__main__":
+    print("🚀 Starting Groundboard Dashboard...")
+    print("📡 Dashboard will connect to API server at: http://localhost:5000/gcs/all")
+    print("🌐 Dashboard will be available at: http://localhost:8050")
+    print("⚠️  Make sure to start the API server first!")
+    print("="*60)
+    app.run(debug=True, port=8050)
