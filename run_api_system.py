@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Simple startup script for the API-based rocket telemetry system
 """
@@ -105,4 +104,5 @@ def main():
         print("✅ All services stopped.")
 
 if __name__ == '__main__':
+
     main()
