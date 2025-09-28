@@ -252,7 +252,7 @@ def index():
     device_links_html = '\n        '.join(device_links)
     
     return f'''
-    <h1>Rocket Telemetry API Server</h1>
+    <h1>API Server</h1>
     <p><strong>Configuration:</strong> {NUM_BOARDS} boards configured</p>
     <p>Available endpoints:</p>
     <ul>
