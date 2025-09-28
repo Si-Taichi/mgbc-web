@@ -6,6 +6,7 @@ import time
 import random
 import traceback
 import math
+import serial
 
 app = Dash(__name__, update_title=None, title='kits board UGCS')
 
@@ -74,39 +75,92 @@ def get_api_config():
         board_names = {str(i): f"Board {i}" for i in range(num_boards)}
     return False
 
-def data_fetcher_all():
+def data_fetcher_all(mode, port="COM3", baudrate=9600):
     global all_board, board_list, num_boards, board_names
     
     # Get initial configuration
     get_api_config()
-    
-    while True:
-        try:
-            # Use the API server
-            url = "http://localhost:5000/gcs/all"
-            r = requests.get(url, timeout=10)
-            if r.status_code == 200:
-                data = r.json()  # {"0": "...", "1": "..."}
-                
-                # Update num_boards based on actual data received
-                received_boards = len(data)
-                if received_boards != num_boards:
-                    print(f"📊 Board count updated: {num_boards} → {received_boards}")
-                    num_boards = received_boards
-                
-                print(f"✅ API Success: Received data for {received_boards} devices {list(data.keys())}")
-            else:
-                print(f"❌ API error: {r.status_code}")
-                time.sleep(2)
-                continue
+        
+    if mode == "api":
+            # API mode loop
+            get_api_config()
+            print("📡 Data fetcher running in API mode...")
 
-            # process data
-            all_board = []
-            for board_id, csv_string in data.items():
-                v = parse_csv_string(csv_string)
+            while True:
+                try:
+                    # Use the API server
+                    url = "http://localhost:5000/gcs/all"
+                    r = requests.get(url, timeout=10)
+                    if r.status_code == 200:
+                        data = r.json()  # {"0": "...", "1": "..."}
+                        
+                        # Update num_boards based on actual data received
+                        received_boards = len(data)
+                        if received_boards != num_boards:
+                            print(f"📊 Board count updated: {num_boards} → {received_boards}")
+                            num_boards = received_boards
+                        
+                        print(f"✅ API Success: Received data for {received_boards} devices {list(data.keys())}")
+                    else:
+                        print(f"❌ API error: {r.status_code}")
+                        time.sleep(2)
+                        continue
+
+                    # process data
+                    all_board = []
+                    for board_id, csv_string in data.items():
+                        v = parse_csv_string(csv_string)
+                        if not v:
+                            continue
+                        all_board.append(v)
+
+                        if board_id not in board_list:
+                            board_list[board_id] = init_board_data()
+
+                        board_list[board_id]["x"].append(v["LIS331DLH axis x"][0])
+                        board_list[board_id]["y"].append(v["LIS331DLH axis y"][0])
+                        board_list[board_id]["z"].append(v["LIS331DLH axis z"][0])
+                        board_list[board_id]["lat"].append(v["lc86g lat"][0])
+                        board_list[board_id]["lon"].append(v["lc86g lon"][0])
+                        board_list[board_id]["Tempurature"].append(v["bme tempurature"][0])
+                        board_list[board_id]["Pressure"].append(v["bme pressure"][0])
+                        board_list[board_id]["Humidity"].append(v["bme humidity"][0])
+                        board_list[board_id]["speed"].append(v["lc86g speed"][0])
+                        board_list[board_id]["alt"].append(v["lc86g alt"][0])
+                        board_list[board_id]["parachute_deployed"].append(v["parachute_deployed"][0])
+                        board_list[board_id]["time"].append(elapsed_seconds())
+
+                except Exception as e:
+                    print(f"❌ Fetcher crashed: {repr(e)}")
+                    traceback.print_exc()
+
+            time.sleep(1)
+    elif mode == "serial":
+        # Serial mode loop
+        num_boards = 1
+        board_names = {"0": "Serial Board"}
+
+        try:
+            ser = serial.Serial(port, baudrate, timeout=1)
+            print(f"✅ Connected to serial port {port} at {baudrate} baud")
+        except Exception as e:
+            print(f"❌ Could not open serial port {port}: {e}")
+            return
+
+        print("📡 Data fetcher running in SERIAL mode...")
+
+        while True:
+            try:
+                line = ser.readline().decode("utf-8").strip()
+                if not line:
+                    continue
+
+                v = parse_csv_string(line)
                 if not v:
                     continue
-                all_board.append(v)
+
+                all_board = [v]  # only 1 board in serial mode
+                board_id = "0"
 
                 if board_id not in board_list:
                     board_list[board_id] = init_board_data()
@@ -124,11 +178,12 @@ def data_fetcher_all():
                 board_list[board_id]["parachute_deployed"].append(v["parachute_deployed"][0])
                 board_list[board_id]["time"].append(elapsed_seconds())
 
-        except Exception as e:
-            print(f"❌ Fetcher crashed: {repr(e)}")
-            traceback.print_exc()
+            except Exception as e:
+                print(f"❌ Serial fetcher error: {repr(e)}")
+                traceback.print_exc()
 
-        time.sleep(1)
+    else:
+        print(f"⚠️ Unknown mode: {mode}")
 
 def clamp_lat_lon(lat, lon):
     # keep values inside valid ranges
@@ -144,10 +199,6 @@ def generate_board_options():
         options.append({"label": board_name, "value": str(i)})
     return options
 
-# Start background thread
-print("🚀 Starting groundboard in API mode...")
-print("📡 Will connect to API server at: http://localhost:5000/gcs/all")
-threading.Thread(target=data_fetcher_all, daemon=True).start()
 
 # Create figures
 fig2d = go.Figure()
@@ -607,15 +658,22 @@ def update_charts(n, selected_board, selected_metric, predicted_apogee, predicti
         title="Latitude Longitude Position", 
         uirevision="stay",
         paper_bgcolor="#102c55",
-        font=dict(color="white")
+        font=dict(color="white")   
     )
 
     return fig2d, fig_accel, fig_speed, fig_alt, fig3d, figgeo, status_rows
 
 if __name__ == "__main__":
+    MODE = "api"   # "api" or "serial"
+
     print("🚀 Starting Groundboard Dashboard...")
-    print("📡 Dashboard will connect to API server at: http://localhost:5000/gcs/all")
-    print("🌐 Dashboard will be available at: http://localhost:8050")
-    print("⚠️  Make sure to start the API server first!")
+    if MODE == "api":
+        print("📡 Dashboard will connect to API server at: http://localhost:5000/gcs/all")
+    else:
+        print("📡 Dashboard will read from SERIAL port COM[I haven't do this] at 9600 baud")
+
+    threading.Thread(target=data_fetcher_all, kwargs={"mode": MODE, "port": "COM3", "baudrate": 9600}, daemon=True).start()
+
+    print("🌐 Dashboard available at: http://localhost:8050")
     print("="*60)
     app.run(debug=True, port=8050)
