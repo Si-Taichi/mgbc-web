@@ -1,8 +1,3 @@
-"""
-Configuration file for the Rocket Telemetry System
-Modify these values to customize the system behavior
-"""
-
 # ==========================================
 # BOARD CONFIGURATION
 # ==========================================
@@ -138,4 +133,5 @@ if __name__ == '__main__':
     for i in range(NUM_BOARDS):
         name = BOARD_NAMES.get(i, f"Board {i}")
         print(f"  {i}: {name}")
+
     print("\nTo change the number of boards, edit NUM_BOARDS in this file.")
