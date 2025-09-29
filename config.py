@@ -1,3 +1,8 @@
+"""
+Configuration file for the Rocket Telemetry System
+Modify these values to customize the system behavior
+"""
+
 # ==========================================
 # BOARD CONFIGURATION
 # ==========================================
@@ -78,7 +83,7 @@ COLORS = {
 
 # Default values
 DEFAULTS = {
-    "predicted_apogee": 1000,   # meters
+    "predicted_apogee": 1200,   # meters
     "selected_board": "0",
     "selected_metric": "Tempurature"
 }
@@ -88,14 +93,7 @@ DEFAULTS = {
 # ==========================================
 
 # Maximum data points to store per board (memory management)
-MAX_DATA_POINTS = 1000
-
-# Parachute deployment rules
-PARACHUTE_CONFIG = {
-    "deploy_after_apogee_seconds": 5,
-    "deploy_speed_threshold": 50,   # m/s
-    "deploy_altitude_threshold": 500  # meters above ground
-}
+MAX_DATA_POINTS = 10000
 
 # Status detection thresholds
 STATUS_THRESHOLDS = {
@@ -133,5 +131,4 @@ if __name__ == '__main__':
     for i in range(NUM_BOARDS):
         name = BOARD_NAMES.get(i, f"Board {i}")
         print(f"  {i}: {name}")
-
     print("\nTo change the number of boards, edit NUM_BOARDS in this file.")
