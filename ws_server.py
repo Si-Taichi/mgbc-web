@@ -27,7 +27,8 @@ class SampleDataGenerator:
                 'humidity': random.uniform(40, 60),
                 'speed': 0.0,
                 'time_offset': random.uniform(0, 15),  # Stagger the flights
-                'parachute_deployed': False,
+                'main_deploy_triggered': False,
+                'second_deploy_triggered': False,
                 'max_altitude_reached': 0,
                 'has_launched': False,
                 'has_landed': False,
@@ -57,46 +58,48 @@ class SampleDataGenerator:
         
         # Determine flight phase based on time and state
         if flight_time < 0:
-            # Not launched yet - true waiting
-            flight_phase = "waiting"
+            # Not launched yet - GROUND phase
+            flight_phase = "GROUND"
             alt = state['alt'] + random.uniform(-1, 1)  # Small ground noise
             speed = random.uniform(0, 2)  # Very low speed on ground
             temp_change = random.uniform(-0.5, 0.5)  # Ambient temperature variation
             pressure_change = random.uniform(-2, 2)  # Weather pressure variation
-            parachute_deployed = 0
-        elif flight_time < 10 and not state['has_landed']:  # Launch phase (0-10 seconds)
+            
+        elif flight_time < 10 and not state['has_landed']:  # Launch/Rising phase (0-10 seconds)
             if not state['has_launched']:
                 state['has_launched'] = True
                 state['launch_time'] = elapsed_time
-            flight_phase = "launch"
+            flight_phase = "RISING"
             alt = state['alt'] + (flight_time ** 2) * 5  # Accelerating upward
             speed = flight_time * 10
             temp_change = -flight_time * 0.5  # Getting colder
             pressure_change = -flight_time * 2
-            parachute_deployed = 0
-        elif flight_time < 30 and not state['has_landed']:  # Ascent phase (10-30 seconds)
-            flight_phase = "ascent"
+            
+        elif flight_time < 30 and not state['has_landed']:  # Coasting phase (10-30 seconds)
+            flight_phase = "COASTING"
             t_ascent = flight_time - 10
             alt = state['alt'] + 500 + t_ascent * 25 - (t_ascent ** 2) * 0.3  # Slowing down
             speed = max(0, 50 - t_ascent * 2)
             temp_change = -10 - t_ascent * 0.3
             pressure_change = -30 - t_ascent * 1.5
-            parachute_deployed = 0
-        elif flight_time < 35 and not state['has_landed']:  # Apogee phase (30-35 seconds)
-            flight_phase = "apogee"
+            
+        elif flight_time < 35 and not state['has_landed']:  # Apogee - MAIN DEPLOY phase (30-35 seconds)
+            flight_phase = "MAIN DEPLOY"
+            if not state['main_deploy_triggered']:
+                state['main_deploy_triggered'] = True
+                
             t_apogee = flight_time - 30
             max_alt = state['alt'] + 500 + 20 * 25 - (20 ** 2) * 0.3
             alt = max_alt - (t_apogee ** 2) * 2  # Start falling slowly
             speed = t_apogee * 4
             temp_change = -16
             pressure_change = -60
-            parachute_deployed = 0
             
             # Update max altitude reached
             if alt > state['max_altitude_reached']:
                 state['max_altitude_reached'] = alt
+                
         elif not state['has_landed']:  # Descent phase
-            flight_phase = "descent"
             t_descent = flight_time - 35
             max_alt = state['alt'] + 500 + 20 * 25 - (20 ** 2) * 0.3
             alt = max(state['alt'], max_alt - 50 - (t_descent ** 2) * 3)  # Falling faster
@@ -104,27 +107,30 @@ class SampleDataGenerator:
             temp_change = -16 + t_descent * 0.2  # Warming up as descending
             pressure_change = -60 + t_descent * 1.2
             
+            # SECOND DEPLOY triggers at 150m altitude
+            if alt <= 150 and not state['second_deploy_triggered']:
+                state['second_deploy_triggered'] = True
+                flight_phase = "SECOND DEPLOY"
+            elif state['second_deploy_triggered']:
+                flight_phase = "SECOND DEPLOY"
+            else:
+                flight_phase = "MAIN DEPLOY"  # Still descending with main chute
+            
             # Check for landing (altitude close to starting altitude and reasonable time)
             if alt <= state['alt'] + 10 and t_descent > 10:  # After reasonable descent time
                 state['has_landed'] = True
                 state['landing_time'] = elapsed_time
-            
-            # Parachute deployment logic
-            if (t_descent > 5 or speed > 50 or alt < 500) and not state['parachute_deployed']:
-                state['parachute_deployed'] = True
-            
-            parachute_deployed = 1 if state['parachute_deployed'] else 0
-        else:  # Landed phase
-            flight_phase = "landed"
+                
+        else:  # LANDED phase
+            flight_phase = "LANDED"
             time_since_landing = elapsed_time - state['landing_time']
             alt = state['alt'] + random.uniform(0, 2)  # Small ground variations
             speed = random.uniform(0, 1)  # Nearly zero speed
             temp_change = random.uniform(-0.3, 0.3) + (time_since_landing * 0.05)  # Gradually warming up
             pressure_change = random.uniform(-1, 1)  # Ambient pressure
-            parachute_deployed = 1  # Parachute should be deployed after landing
         
         # Update position (slight drift during flight)
-        if flight_phase not in ["waiting", "landed"]:
+        if flight_phase not in ["GROUND", "LANDED"]:
             drift_factor = 0.001
             state['lat'] += random.uniform(-drift_factor, drift_factor)
             state['lon'] += random.uniform(-drift_factor, drift_factor)
@@ -134,35 +140,28 @@ class SampleDataGenerator:
         state['prev_alt'] = alt
         state['prev_time'] = elapsed_time
         
-        # Update position (slight drift during flight)
-        if flight_phase != "waiting":
-            drift_factor = 0.001
-            state['lat'] += random.uniform(-drift_factor, drift_factor)
-            state['lon'] += random.uniform(-drift_factor, drift_factor)
-            state['lat'], state['lon'] = self.clamp_lat_lon(state['lat'], state['lon'])
-        
         # Generate accelerometer data (simulate vibrations and movements)
-        if flight_phase == "waiting":
+        if flight_phase == "GROUND":
             accel_x = random.uniform(-1, 1)  # Minimal movement
             accel_y = random.uniform(-1, 1)
             accel_z = random.uniform(9, 11)  # ~1g + small noise
-        elif flight_phase == "launch":
+        elif flight_phase == "RISING":
             accel_x = random.uniform(-20, 20)
             accel_y = random.uniform(-20, 20) 
             accel_z = random.uniform(50, 100)  # Strong upward acceleration
-        elif flight_phase == "ascent":
+        elif flight_phase == "COASTING":
             accel_x = random.uniform(-10, 10)
             accel_y = random.uniform(-10, 10)
             accel_z = random.uniform(0, 30)
-        elif flight_phase == "apogee":
-            accel_x = random.uniform(-5, 5)
-            accel_y = random.uniform(-5, 5)
-            accel_z = random.uniform(-10, 10)  # Near zero-g
-        elif flight_phase == "descent":
+        elif flight_phase == "MAIN DEPLOY":
             accel_x = random.uniform(-15, 15)
             accel_y = random.uniform(-15, 15)
-            accel_z = random.uniform(-50, -20)  # Falling
-        elif flight_phase == "landed":
+            accel_z = random.uniform(-50, -10)  # Falling/deceleration
+        elif flight_phase == "SECOND DEPLOY":
+            accel_x = random.uniform(-8, 8)
+            accel_y = random.uniform(-8, 8)
+            accel_z = random.uniform(-20, -5)  # Slower descent with second chute
+        elif flight_phase == "LANDED":
             accel_x = random.uniform(-0.5, 0.5)  # Very minimal movement
             accel_y = random.uniform(-0.5, 0.5)
             accel_z = random.uniform(9.5, 10.5)  # ~1g, very stable
@@ -178,7 +177,6 @@ class SampleDataGenerator:
             'humidity': max(0, min(100, state['humidity'] + random.uniform(-2, 2))),
             'speed': speed + random.uniform(-2, 2),
             'alt': max(0, alt + random.uniform(-5, 5)),
-            'parachute_deployed': parachute_deployed,
             'phase': flight_phase
         }
     
@@ -195,7 +193,7 @@ class SampleDataGenerator:
             f"{data['humidity']:.2f}",
             f"{data['speed']:.2f}",
             f"{data['alt']:.2f}",
-            f"{data['parachute_deployed']}"  # 11th data point - parachute status
+            data['phase']  # 11th data point - flight phase
         ])
     
     def run_data_generator(self):
@@ -223,12 +221,10 @@ class SampleDataGenerator:
                         
                         # Print status every 10 iterations for device 0
                         if counter % 10 == 0 and device_id == 0:
-                            parachute_status = "DEPLOYED" if flight_data['parachute_deployed'] == 1 else "NOT DEPLOYED"
-                            print(f"Device {device_id}: {flight_data['phase'].upper()} - "
+                            print(f"Device {device_id}: {flight_data['phase']} - "
                                   f"Alt: {flight_data['alt']:.1f}m, "
                                   f"Speed: {flight_data['speed']:.1f}m/s, "
-                                  f"Temp: {flight_data['temp']:.1f}°C, "
-                                  f"Parachute: {parachute_status}")
+                                  f"Temp: {flight_data['temp']:.1f}°C")
                 
                 counter += 1
                 time.sleep(0.5)  # Update every 500ms
@@ -252,7 +248,7 @@ def index():
     device_links_html = '\n        '.join(device_links)
     
     return f'''
-    <h1>API Server</h1>
+    <h1>Rocket Telemetry API Server</h1>
     <p><strong>Configuration:</strong> {NUM_BOARDS} boards configured</p>
     <p>Available endpoints:</p>
     <ul>
@@ -261,8 +257,9 @@ def index():
         <li><a href="/status">/status</a> - Server status</li>
         <li><a href="/health">/health</a> - Health check</li>
     </ul>
-    <p>Data format: CSV string with accelerometer, GPS, BME sensor data, and parachute status</p>
-    <p>CSV Format: accel_x,accel_y,accel_z,lat,lon,temp,pressure,humidity,speed,alt,parachute_deployed</p>
+    <p>Data format: CSV string with accelerometer, GPS, BME sensor data, and flight phase</p>
+    <p>CSV Format: accel_x,accel_y,accel_z,lat,lon,temp,pressure,humidity,speed,alt,phase</p>
+    <p>Flight Phases: GROUND, RISING, COASTING, MAIN DEPLOY, SECOND DEPLOY, LANDED</p>
     
     <h2>Board Configuration</h2>
     <ul>
