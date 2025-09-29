@@ -6,6 +6,7 @@ import time
 import random
 import traceback
 import math
+import serial
 
 app = Dash(__name__, update_title=None, title='kits board UGCS')
 
@@ -15,8 +16,10 @@ def init_board_data():
         "lat": [], "lon": [],
         "Tempurature": [], "Pressure": [], "Humidity": [],
         "speed": [], "alt": [],
-        "parachute_deployed": [],
-        "time": []
+        "phase": [],
+        "time": [],
+        "main_deploy": False,  # Track main deploy event
+        "second_deploy": False  # Track second deploy event
     }
 
 all_board = []
@@ -54,7 +57,7 @@ def parse_csv_string(csv_string):
         "bme humidity": [float(parts[7])],
         "lc86g speed": [float(parts[8])],
         "lc86g alt": [float(parts[9])],
-        "parachute_deployed": [int(parts[10])]
+        "phase": [parts[10].strip()]  # Phase string
     }
 
 def get_api_config():
@@ -74,39 +77,107 @@ def get_api_config():
         board_names = {str(i): f"Board {i}" for i in range(num_boards)}
     return False
 
-def data_fetcher_all():
+def data_fetcher_all(mode, port="COM3", baudrate=9600):
     global all_board, board_list, num_boards, board_names
     
     # Get initial configuration
     get_api_config()
-    
-    while True:
-        try:
-            # Use the API server
-            url = "http://localhost:5000/gcs/all"
-            r = requests.get(url, timeout=10)
-            if r.status_code == 200:
-                data = r.json()  # {"0": "...", "1": "..."}
-                
-                # Update num_boards based on actual data received
-                received_boards = len(data)
-                if received_boards != num_boards:
-                    print(f"📊 Board count updated: {num_boards} → {received_boards}")
-                    num_boards = received_boards
-                
-                print(f"✅ API Success: Received data for {received_boards} devices {list(data.keys())}")
-            else:
-                print(f"❌ API error: {r.status_code}")
-                time.sleep(2)
-                continue
+        
+    if mode == "api":
+            # API mode loop
+            get_api_config()
+            print("📡 Data fetcher running in API mode...")
 
-            # process data
-            all_board = []
-            for board_id, csv_string in data.items():
-                v = parse_csv_string(csv_string)
+            while True:
+                try:
+                    # Use the API server
+                    url = "http://localhost:5000/gcs/all"
+                    r = requests.get(url, timeout=10)
+                    if r.status_code == 200:
+                        data = r.json()  # {"0": "...", "1": "..."}
+                        
+                        # Update num_boards based on actual data received
+                        received_boards = len(data)
+                        if received_boards != num_boards:
+                            print(f"📊 Board count updated: {num_boards} → {received_boards}")
+                            num_boards = received_boards
+                        
+                        print(f"✅ API Success: Received data for {received_boards} devices {list(data.keys())}")
+                    else:
+                        print(f"❌ API error: {r.status_code}")
+                        time.sleep(2)
+                        continue
+
+                    # process data
+                    all_board = []
+                    for board_id, csv_string in data.items():
+                        v = parse_csv_string(csv_string)
+                        if not v:
+                            continue
+                        all_board.append(v)
+
+                        if board_id not in board_list:
+                            board_list[board_id] = init_board_data()
+
+                        board_list[board_id]["x"].append(v["LIS331DLH axis x"][0])
+                        board_list[board_id]["y"].append(v["LIS331DLH axis y"][0])
+                        board_list[board_id]["z"].append(v["LIS331DLH axis z"][0])
+                        board_list[board_id]["lat"].append(v["lc86g lat"][0])
+                        board_list[board_id]["lon"].append(v["lc86g lon"][0])
+                        board_list[board_id]["Tempurature"].append(v["bme tempurature"][0])
+                        board_list[board_id]["Pressure"].append(v["bme pressure"][0])
+                        board_list[board_id]["Humidity"].append(v["bme humidity"][0])
+                        board_list[board_id]["speed"].append(v["lc86g speed"][0])
+                        board_list[board_id]["alt"].append(v["lc86g alt"][0])
+                        
+                        # Handle phase and deploy detection
+                        phase_raw = v["phase"][0].upper()
+                        
+                        # Detect deploy events
+                        if "MAIN" in phase_raw and "DEPLOY" in phase_raw:
+                            board_list[board_id]["main_deploy"] = True
+                            display_phase = "DESCENT"
+                        elif "SECOND" in phase_raw and "DEPLOY" in phase_raw:
+                            board_list[board_id]["second_deploy"] = True
+                            display_phase = "DESCENT"
+                        else:
+                            display_phase = phase_raw
+                        
+                        board_list[board_id]["phase"].append(display_phase)
+                        board_list[board_id]["time"].append(elapsed_seconds())
+
+                except Exception as e:
+                    print(f"❌ Fetcher crashed: {repr(e)}")
+                    traceback.print_exc()
+
+                time.sleep(1)
+                
+    elif mode == "serial":
+        # Serial mode loop
+        num_boards = 1
+        board_names = {"0": "Serial Board"}
+
+        try:
+            ser = serial.Serial(port, baudrate, timeout=1)
+            print(f"✅ Connected to serial port {port} at {baudrate} baud")
+        except Exception as e:
+            print(f"❌ Could not open serial port {port}: {e}")
+            return
+
+        print("📡 Data fetcher running in SERIAL mode...")
+
+        while True:
+            try:
+                line = ser.readline().decode("utf-8").strip()
+                if not line:
+                    continue
+
+                v = parse_csv_string(line)
                 if not v:
                     continue
-                all_board.append(v)
+
+                all_board = [v]  # only 1 board in serial mode
+                board_id = "0"
 
                 if board_id not in board_list:
                     board_list[board_id] = init_board_data()
@@ -121,14 +192,29 @@ def data_fetcher_all():
                 board_list[board_id]["Humidity"].append(v["bme humidity"][0])
                 board_list[board_id]["speed"].append(v["lc86g speed"][0])
                 board_list[board_id]["alt"].append(v["lc86g alt"][0])
-                board_list[board_id]["parachute_deployed"].append(v["parachute_deployed"][0])
+                
+                # Handle phase and deploy detection
+                phase_raw = v["phase"][0].upper()
+                
+                # Detect deploy events
+                if "MAIN" in phase_raw and "DEPLOY" in phase_raw:
+                    board_list[board_id]["main_deploy"] = True
+                    display_phase = "DESCENT"
+                elif "SECOND" in phase_raw and "DEPLOY" in phase_raw:
+                    board_list[board_id]["second_deploy"] = True
+                    display_phase = "DESCENT"
+                else:
+                    display_phase = phase_raw
+                
+                board_list[board_id]["phase"].append(display_phase)
                 board_list[board_id]["time"].append(elapsed_seconds())
 
-        except Exception as e:
-            print(f"❌ Fetcher crashed: {repr(e)}")
-            traceback.print_exc()
+            except Exception as e:
+                print(f"❌ Serial fetcher error: {repr(e)}")
+                traceback.print_exc()
 
-        time.sleep(1)
+    else:
+        print(f"⚠️ Unknown mode: {mode}")
 
 def clamp_lat_lon(lat, lon):
     # keep values inside valid ranges
@@ -144,10 +230,6 @@ def generate_board_options():
         options.append({"label": board_name, "value": str(i)})
     return options
 
-# Start background thread
-print("🚀 Starting groundboard in API mode...")
-print("📡 Will connect to API server at: http://localhost:5000/gcs/all")
-threading.Thread(target=data_fetcher_all, daemon=True).start()
 
 # Create figures
 fig2d = go.Figure()
@@ -243,19 +325,22 @@ app.layout = html.Div([
         ], style={"padding": "20px", "flex": "1"}),
     ], style={"display": "flex", "gap": "20px"}),
     
-    # Status Board with prediction memory
+    # Status Board with phase display and deploy status
     html.Div([
         html.H2("Flight Status Board", style={"textAlign": "center", "color": "white"}),
         dash_table.DataTable(
             id="status-board",
             columns=[
                 {"name": "Board", "id": "board"},
-                {"name": "Status", "id": "status"},
+                {"name": "Phase", "id": "phase"},
+                {"name": "Main Deploy", "id": "main_deploy"},
+                {"name": "Second Deploy", "id": "second_deploy"},
                 {"name": "Altitude (m)", "id": "current_alt"},
                 {"name": "Max Alt (m)", "id": "max_alt"},
-                {"name": "Parachute", "id": "parachute"},
                 {"name": "Predicted", "id": "predicted"},
-                {"name": "Difference", "id": "apogee_diff"}
+                {"name": "Difference", "id": "apogee_diff"},
+                {"name": "Distance (m)", "id": "distance"},
+                {"name": "Score (20)", "id": "score"},
             ],
             style_table={"overflowX": "auto"},
             style_header={
@@ -272,14 +357,27 @@ app.layout = html.Div([
             },
             style_data_conditional=[
                 {
-                    'if': {'filter_query': '{parachute} = Deployed'},
+                    'if': {'filter_query': '{phase} = DESCENT'},
                     'backgroundColor': '#0e4b99',
+                    'color': 'white',
+                },
+                {
+                    'if': {'filter_query': '{phase} = COASTING'},
+                    'backgroundColor': '#8B0000',
+                    'color': 'yellow',
+                },
+                {
+                    'if': {'filter_query': '{phase} = RISING'},
+                    'backgroundColor': '#FF4500',
+                    'color': 'white',
+                },
+                {
+                    'if': {'filter_query': '{main_deploy} = "✅ DEPLOYED"'},
                     'color': 'lime',
                 },
                 {
-                    'if': {'filter_query': '{status} = apogee'},
-                    'backgroundColor': '#8B0000',
-                    'color': 'yellow',
+                    'if': {'filter_query': '{second_deploy} = "✅ DEPLOYED"'},
+                    'color': 'lime',
                 }
             ]
         )
@@ -318,7 +416,7 @@ app.layout = html.Div([
     # Hidden div to store prediction memory
     html.Div(id="prediction-memory-store", style={"display": "none"}),
     
-    dcc.Interval(id="interval", interval=800, n_intervals=0)
+    dcc.Interval(id="interval", interval=500, n_intervals=0)
 ])
 
 # Callback to save predictions
@@ -335,7 +433,7 @@ def save_prediction(n_clicks, predicted_apogee, board_id):
     if n_clicks and predicted_apogee and board_id is not None:
         prediction_memory[board_id] = predicted_apogee
         board_name = board_names.get(board_id, f"Board {board_id}")
-        status_msg = f"✅ Saved prediction: {predicted_apogee}m for {board_name}"
+        status_msg = f"Saved prediction: {predicted_apogee}m for {board_name}"
         return status_msg, str(prediction_memory)
     return "", str(prediction_memory)
 
@@ -348,10 +446,10 @@ def save_prediction(n_clicks, predicted_apogee, board_id):
 )
 def update_board_options(n):
     options = generate_board_options()
-    count_msg = f"📊 System: {num_boards} boards configured and active"
+    count_msg = f"System: {num_boards} boards configured and active"
     return options, options, count_msg
 
-# Updated main callback with prediction memory
+# Updated main callback with phase system and deploy status
 @app.callback(
     Output("2d-bmestats", "figure"),
     Output("accelerometer-chart", "figure"),
@@ -372,31 +470,19 @@ def update_charts(n, selected_board, selected_metric, predicted_apogee, predicti
 
     board_data = board_list[selected_board]
 
-    # Status Board Data with prediction memory
+    # Status Board Data with phase system and deploy status
     status_rows = []
     for bid, bdata in board_list.items():
-        if not bdata["alt"] or not bdata["speed"]:
+        if not bdata["alt"] or not bdata["phase"]:
             continue
 
-        # Determine current status based on recent data
-        recent_alts = bdata["alt"][-5:] if len(bdata["alt"]) >= 5 else bdata["alt"]
-        recent_speeds = bdata["speed"][-5:] if len(bdata["speed"]) >= 5 else bdata["speed"]
         current_alt = bdata["alt"][-1]
         max_alt = max(bdata["alt"])
-        current_speed = bdata["speed"][-1]
-        parachute_status = "Deployed" if bdata["parachute_deployed"][-1] == 1 else "Not Deployed"
+        current_phase = bdata["phase"][-1]
         
-        # Determine flight phase
-        if max_alt < 100:
-            status = "waiting/launch"
-        elif current_speed < 5 and current_alt > max_alt * 0.9:
-            status = "apogee"
-        elif current_alt < max_alt * 0.8 and current_speed > 20:
-            status = "descent"
-        elif current_alt > max_alt * 0.5:
-            status = "ascent"
-        else:
-            status = "landed"
+        # Deploy status
+        main_deploy_status = "✅ DEPLOYED" if bdata["main_deploy"] else "⏳ Waiting"
+        second_deploy_status = "✅ DEPLOYED" if bdata["second_deploy"] else "⏳ Waiting"
         
         # Get stored prediction for this board
         stored_prediction = prediction_memory.get(bid, None)
@@ -409,23 +495,66 @@ def update_charts(n, selected_board, selected_metric, predicted_apogee, predicti
                 diff = max_alt - float(stored_prediction)
                 apogee_diff = f"{diff:+.1f}m"
                 if abs(diff) < 50:
-                    apogee_diff = f"🎯{apogee_diff}"  # Good prediction
+                    apogee_diff = f"{apogee_diff} ✓"
                 elif diff > 0:
-                    apogee_diff = f"📈{apogee_diff}"  # Over-performed
+                    apogee_diff = f"{apogee_diff} ↑"
                 else:
-                    apogee_diff = f"📉{apogee_diff}"  # Under-performed
+                    apogee_diff = f"{apogee_diff} ↓"
             except:
                 apogee_diff = "Error"
+        # --- Distance calculation ---
+        distance_m = "N/A"
+        if bdata["lat"] and bdata["lon"]:
+            lat0, lon0 = bdata["lat"][0], bdata["lon"][0]  # launch
+            lat_end, lon_end = bdata["lat"][-1], bdata["lon"][-1]  # landing
+            dx, dy = latlon_to_xy(lat0, lon0, lat_end, lon_end)
+            dist_val = math.sqrt(dx**2 + dy**2)
+            distance_m = f"{dist_val:.1f}"
 
+        # --- Scoring system ---
+        apogee_score = 0
+        distance_score = 0
+
+        # Apogee score based on % error ranges
+        if stored_prediction:
+            try:
+                error_pct = abs(max_alt - float(stored_prediction)) / float(stored_prediction) * 100
+                if error_pct < 2: apogee_score = 10
+                elif error_pct < 5: apogee_score = 9
+                elif error_pct < 10: apogee_score = 8
+                elif error_pct < 15: apogee_score = 7
+                elif error_pct < 20: apogee_score = 6
+                elif error_pct < 25: apogee_score = 5
+                elif error_pct < 30: apogee_score = 4
+                elif error_pct < 40: apogee_score = 3
+                elif error_pct < 50: apogee_score = 2
+                else: apogee_score = 1
+            except:
+                pass
+
+        # Distance score: max apogee/2 is cutoff, linear scale
+        if isinstance(distance_m, str) and distance_m != "N/A":
+            try:
+                dist_val = float(distance_m)
+                max_dist = max_alt / 2 if max_alt > 0 else 1
+                score_ratio = max(0, 1 - dist_val / max_dist)  # closer → higher
+                distance_score = round(score_ratio * 10, 1)
+            except:
+                pass
+
+        total_score = apogee_score + distance_score
         board_name = board_names.get(bid, f"Board {bid}")
         status_rows.append({
             "board": board_name,
-            "status": status,
+            "phase": current_phase,
+            "main_deploy": main_deploy_status,
+            "second_deploy": second_deploy_status,
             "current_alt": f"{current_alt:.1f}",
             "max_alt": f"{max_alt:.1f}",
-            "parachute": parachute_status,
             "predicted": predicted_display,
-            "apogee_diff": apogee_diff
+            "apogee_diff": apogee_diff,
+            "distance": distance_m,
+            "score": f"{apogee_score:.1f} + {distance_score:.1f} = {total_score:.1f}"
         })
 
     # BME Chart
@@ -435,7 +564,7 @@ def update_charts(n, selected_board, selected_metric, predicted_apogee, predicti
         mode="lines+markers",
         line=dict(color="brown")
     ))
-    unit = {"Tempurature": " (°C)", "Pressure": " (Pa)", "Humidity": " (%)"}
+    unit = {"Tempurature": " (C)", "Pressure": " (Pa)", "Humidity": " (%)"}
     selected_board_name = board_names.get(selected_board, f"Board {selected_board}")
     fig2d.update_layout(
         title=f"{selected_metric} Over Time ({selected_board_name})",
@@ -607,15 +736,22 @@ def update_charts(n, selected_board, selected_metric, predicted_apogee, predicti
         title="Latitude Longitude Position", 
         uirevision="stay",
         paper_bgcolor="#102c55",
-        font=dict(color="white")
+        font=dict(color="white")   
     )
 
     return fig2d, fig_accel, fig_speed, fig_alt, fig3d, figgeo, status_rows
 
 if __name__ == "__main__":
-    print("🚀 Starting Groundboard Dashboard...")
-    print("📡 Dashboard will connect to API server at: http://localhost:5000/gcs/all")
-    print("🌐 Dashboard will be available at: http://localhost:8050")
-    print("⚠️  Make sure to start the API server first!")
+    MODE = "api"   # "api" or "serial"
+
+    print("Starting Groundboard Dashboard...")
+    if MODE == "api":
+        print("Dashboard will connect to API server at: http://localhost:5000/gcs/all")
+    else:
+        print("Dashboard will read from SERIAL port COM3 at 9600 baud")
+
+    threading.Thread(target=data_fetcher_all, kwargs={"mode": MODE, "port": "COM3", "baudrate": 9600}, daemon=True).start()
+
+    print("Dashboard available at: http://localhost:8050")
     print("="*60)
     app.run(debug=True, port=8050)
