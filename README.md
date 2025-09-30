@@ -21,5 +21,8 @@ How to use (Serial port)
 4. In terminal, cd to the location of the folder.
 5. type : python groundDashboard.py
 6. ctrl + click on the dashboard ip to see the dashboard.
-   
-##### note : To use only the dashboard simply only run only the groundDashboard.py with the config.py, so you can configure some of the variables that are use in the groundDashboard. #####
+
+Note :
+##### To use only the dashboard simply only run only the groundDashboard.py with the config.py, so you can configure some of the variables that are use in the groundDashboard. #####
+##### DO NOT make any changes while the dashboard is running, or else the dashboard will refresh itself and the data will be gone. Like staring the program again. It is        #####
+##### recommended to run on the computer terminal not in the editor so that you don't accidently restart the dashborad.                                                         #####
