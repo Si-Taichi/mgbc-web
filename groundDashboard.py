@@ -7,6 +7,7 @@ import random
 import traceback
 import math
 import serial
+from config import NUM_BOARDS, MODE, PORT, BAUDRATE, DASHBOARD_UPDATE_INTERVAL
 
 app = Dash(__name__, update_title=None, title='kits board UGCS')
 
@@ -25,7 +26,7 @@ def init_board_data():
 all_board = []
 board_list = {}
 start_time = time.time()
-num_boards = 6  # Will be updated dynamically from API
+num_boards = NUM_BOARDS  # Will be updated dynamically from API
 board_names = {}  # Will be populated from API
 prediction_memory = {}  # Store predictions: {board_id: predicted_apogee_value}
 
@@ -77,7 +78,7 @@ def get_api_config():
         board_names = {str(i): f"Board {i}" for i in range(num_boards)}
     return False
 
-def data_fetcher_all(mode, port="COM3", baudrate=9600):
+def data_fetcher_all(mode):
     global all_board, board_list, num_boards, board_names
     
     # Get initial configuration
@@ -158,10 +159,10 @@ def data_fetcher_all(mode, port="COM3", baudrate=9600):
         board_names = {"0": "Serial Board"}
 
         try:
-            ser = serial.Serial(port, baudrate, timeout=1)
-            print(f"✅ Connected to serial port {port} at {baudrate} baud")
+            ser = serial.Serial(PORT, BAUDRATE, timeout=1)
+            print(f"✅ Connected to serial port {PORT} at {BAUDRATE} baud")
         except Exception as e:
-            print(f"❌ Could not open serial port {port}: {e}")
+            print(f"❌ Could not open serial port {PORT}: {e}")
             return
 
         print("📡 Data fetcher running in SERIAL mode...")
@@ -416,7 +417,7 @@ app.layout = html.Div([
     # Hidden div to store prediction memory
     html.Div(id="prediction-memory-store", style={"display": "none"}),
     
-    dcc.Interval(id="interval", interval=500, n_intervals=0)
+    dcc.Interval(id="interval", interval=DASHBOARD_UPDATE_INTERVAL, n_intervals=0)
 ])
 
 # Callback to save predictions
@@ -742,7 +743,6 @@ def update_charts(n, selected_board, selected_metric, predicted_apogee, predicti
     return fig2d, fig_accel, fig_speed, fig_alt, fig3d, figgeo, status_rows
 
 if __name__ == "__main__":
-    MODE = "api"   # "api" or "serial"
 
     print("Starting Groundboard Dashboard...")
     if MODE == "api":
@@ -750,7 +750,7 @@ if __name__ == "__main__":
     else:
         print("Dashboard will read from SERIAL port COM3 at 9600 baud")
 
-    threading.Thread(target=data_fetcher_all, kwargs={"mode": MODE, "port": "COM3", "baudrate": 9600}, daemon=True).start()
+    threading.Thread(target=data_fetcher_all, kwargs={"mode": MODE}, daemon=True).start()
 
     print("Dashboard available at: http://localhost:8050")
     print("="*60)
