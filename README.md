@@ -17,7 +17,7 @@ How to use (Serial port)
 
 1. Download the groundDashboard.py and config.py
 2. Connect the board to serial port.
-3. Go into config.py and change the port and baudrate to match what you are using and save the file.
+3. Go into config.py and change the mode, port and baudrate to match what you are using and save the file.
 4. In terminal, cd to the location of the folder.
 5. type : python groundDashboard.py
 6. ctrl + click on the dashboard ip to see the dashboard.
