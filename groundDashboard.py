@@ -262,7 +262,7 @@ figgeo.update_layout(
 
 # Layout with dynamic board count
 app.layout = html.Div([
-    html.H1("Universal Ground Control System", style={"textAlign": "center", "color" : "white"}),
+    html.H1("Multi Ground Board Connection - Website", style={"textAlign": "center", "color" : "white"}),
     
     # API Status indicator
     html.Div([
