@@ -21,6 +21,9 @@ BOARD_NAMES = {
     5: "Rocket Foxtrot"
 }
 
+# Serial
+
+
 # ==========================================
 # SERVER CONFIGURATION
 # ==========================================
@@ -34,7 +37,7 @@ DASH_HOST = "localhost"
 DASH_PORT = 8050
 
 # ==========================================
-# DATA GENERATION SETTINGS
+# DATA SETTINGS
 # ==========================================
 
 # How often to generate new data (seconds)
@@ -48,7 +51,7 @@ FLIGHT_CONFIG = {
     "launch_duration": 10,      # seconds
     "ascent_duration": 20,      # seconds (after launch)
     "apogee_duration": 5,       # seconds at apogee
-    "max_altitude": 1200,       # target maximum altitude in meters
+    "max_altitude": 1300,       # target maximum altitude in meters
     "launch_stagger": 15,       # max seconds between launches
 }
 
@@ -124,4 +127,5 @@ if __name__ == '__main__':
         name = BOARD_NAMES.get(i, f"Board {i}")
         print(f"  {i}: {name}")
     print("\nTo change the number of boards, edit NUM_BOARDS in this file.")
+
 
