@@ -21,8 +21,14 @@ BOARD_NAMES = {
     5: "Rocket Foxtrot"
 }
 
-# Serial
+#Mode Configuration
 
+MODE = "api" #"serial"
+
+# Serial mode Configurations
+
+PORT = "COM3"
+BAUDRATE = "9600"
 
 # ==========================================
 # SERVER CONFIGURATION
@@ -127,5 +133,6 @@ if __name__ == '__main__':
         name = BOARD_NAMES.get(i, f"Board {i}")
         print(f"  {i}: {name}")
     print("\nTo change the number of boards, edit NUM_BOARDS in this file.")
+
 
 
