@@ -261,7 +261,7 @@ def index():
     <p>CSV Format: accel_x,accel_y,accel_z,lat,lon,temp,pressure,humidity,speed,alt,phase</p>
     <p>Flight Phases: GROUND, RISING, COASTING, MAIN DEPLOY, SECOND DEPLOY, LANDED</p>
     
-    <h2>Board Configuration</h2>
+    <h2>Board Names</h2>
     <ul>
     ''' + '\n    '.join([f'<li>Device {i}: {BOARD_NAMES.get(i, f"Board {i}")}</li>' for i in range(NUM_BOARDS)]) + '''
     </ul>
