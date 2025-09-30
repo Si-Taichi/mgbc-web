@@ -7,7 +7,7 @@ import random
 import traceback
 import math
 import serial
-from config import NUM_BOARDS, MODE, PORT, BAUDRATE, DASHBOARD_UPDATE_INTERVAL
+from config import NUM_BOARDS, MODE, PORT, BAUDRATE, DASHBOARD_UPDATE_INTERVAL, API_HOST, API_PORT, DASH_HOST, DASH_PORT
 
 app = Dash(__name__, update_title=None, title='kits board UGCS')
 
@@ -65,7 +65,7 @@ def get_api_config():
     """Get configuration from API server"""
     global num_boards, board_names
     try:
-        r = requests.get("http://localhost:5000/status", timeout=5)
+        r = requests.get(f"http://{API_HOST}:{API_PORT}/status", timeout=5)
         if r.status_code == 200:
             data = r.json()
             num_boards = data.get("configured_boards", 6)
@@ -92,7 +92,7 @@ def data_fetcher_all(mode):
             while True:
                 try:
                     # Use the API server
-                    url = "http://localhost:5000/gcs/all"
+                    url = f"http://{API_HOST}:{API_PORT}/gcs/all"
                     r = requests.get(url, timeout=10)
                     if r.status_code == 200:
                         data = r.json()  # {"0": "...", "1": "..."}
@@ -746,12 +746,12 @@ if __name__ == "__main__":
 
     print("Starting Groundboard Dashboard...")
     if MODE == "api":
-        print("Dashboard will connect to API server at: http://localhost:5000/gcs/all")
+        print(f"Dashboard will connect to API server at: http://{API_HOST}:{API_PORT}/gcs/all")
     else:
-        print("Dashboard will read from SERIAL port COM3 at 9600 baud")
+        print(f"Dashboard will read from SERIAL port {PORT} at {BAUDRATE} baud")
 
     threading.Thread(target=data_fetcher_all, kwargs={"mode": MODE}, daemon=True).start()
 
-    print("Dashboard available at: http://localhost:8050")
+    print(f"Dashboard available at: http://{DASH_HOST}:{DASH_PORT}")
     print("="*60)
-    app.run(debug=True, port=8050)
+    app.run(debug=True, port=DASH_PORT)
