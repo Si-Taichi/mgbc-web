@@ -1,11 +1,12 @@
 """
-Simple startup script for the API-based rocket telemetry system
+Simple startup script
 """
 
 import subprocess
 import time
 import sys
 import os
+from config import API_HOST, API_PORT, DASH_HOST, DASH_PORT
 
 def start_api_server():
     """Start the API server"""
@@ -35,11 +36,11 @@ def start_groundboard():
 
 def main():
     print("="*70)
-    print("🚀 ROCKET TELEMETRY SYSTEM - API MODE")
+    print("🚀 Multi Ground Board Connection - API MODE")
     print("="*70)
     
     # Check if files exist
-    required_files = ['ws_server.py', 'groundDashboard.py']
+    required_files = ['ws_server.py', 'groundDashboard.py', 'config.py']
     missing_files = [f for f in required_files if not os.path.exists(f)]
     
     if missing_files:
@@ -48,7 +49,7 @@ def main():
         return
     
     print("📋 System Architecture:")
-    print("   API Server (Port 5000) → HTTP REST API → Dashboard (Port 8050)")
+    print(f"   API Server (Port {API_PORT}) → HTTP REST API → Dashboard (Port {DASH_PORT})")
     print()
     
     # Start API server
@@ -57,7 +58,6 @@ def main():
         return
     
     print("⏳ Waiting for API server to initialize...")
-    time.sleep(5)
     
     # Start dashboard
     dash_proc = start_groundboard()
@@ -70,16 +70,13 @@ def main():
     print("="*70)
     print("✅ SYSTEM STARTED SUCCESSFULLY!")
     print("="*70)
-    print("🔧 API Server:        http://localhost:5000")
-    print("   📄 Status page:    http://localhost:5000/")
-    print("   📊 All devices:    http://localhost:5000/gcs/all")
-    print("   🏥 Health check:   http://localhost:5000/health")
+    print(f"🔧 API Server:        http://{API_HOST}:{API_PORT}")
+    print(f"   📄 Status page:    http://{API_HOST}:{API_PORT}/")
+    print(f"   📊 All devices:    http://{API_HOST}:{API_PORT}/gcs/all")
+    print(f"   🏥 Health check:   http://{API_HOST}:{API_PORT}/health")
     print()
-    print("📊 Groundboard:       http://localhost:8050")
+    print(f"📊 Groundboard:       http://{DASH_HOST}:{DASH_PORT}")
     print("   🎯 Live dashboard")
-    print()
-    print("🔄 Data Flow:")
-    print("   Sample Generator → API Server → HTTP Requests → Dashboard")
     print()
     print("⚠️  Press Ctrl+C to stop both services")
     print("="*70)
@@ -104,6 +101,4 @@ def main():
         print("✅ All services stopped.")
 
 if __name__ == '__main__':
-
     main()
-
