@@ -76,7 +76,7 @@ def main():
     print("   🏥 Health check:   http://localhost:5000/health")
     print()
     print("📊 Groundboard:       http://localhost:8050")
-    print("   🎯 Live dashboard showing rocket telemetry")
+    print("   🎯 Live dashboard")
     print()
     print("🔄 Data Flow:")
     print("   Sample Generator → API Server → HTTP Requests → Dashboard")
@@ -106,3 +106,4 @@ def main():
 if __name__ == '__main__':
 
     main()
+
