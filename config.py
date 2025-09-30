@@ -95,14 +95,6 @@ DEFAULTS = {
 # Maximum data points to store per board (memory management)
 MAX_DATA_POINTS = 10000
 
-# Status detection thresholds
-STATUS_THRESHOLDS = {
-    "launch_altitude": 100,     # meters
-    "apogee_speed": 5,          # m/s
-    "descent_speed": 20,        # m/s
-    "landed_altitude": 50       # meters
-}
-
 def get_board_options():
     """Generate dropdown options for board selection"""
     options = []
@@ -132,3 +124,4 @@ if __name__ == '__main__':
         name = BOARD_NAMES.get(i, f"Board {i}")
         print(f"  {i}: {name}")
     print("\nTo change the number of boards, edit NUM_BOARDS in this file.")
+
