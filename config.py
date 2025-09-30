@@ -1,6 +1,5 @@
 """
-Configuration file for the Rocket Telemetry System
-Modify these values to customize the system behavior
+Configuration file / Modify these values to customize the system behavior
 """
 
 # ==========================================
@@ -121,7 +120,7 @@ def get_dashboard_url():
     return f"http://{DASH_HOST}:{DASH_PORT}"
 
 if __name__ == '__main__':
-    print("🚀 Rocket Telemetry System Configuration")
+    print("System Configuration")
     print("=" * 50)
     print(f"Number of boards: {NUM_BOARDS}")
     print(f"API Server: {get_api_url()}")
