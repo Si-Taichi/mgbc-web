@@ -6,6 +6,10 @@ Notes
    - If you want to see the csv data format, you can see it by running the program and check the in API server or checking the images that I have put in the images folder.
    - Please always check the mode that you are using before running.
 
+Install required libraries
+- type the following command in the terminal : pip install -r requirements.txt
+  
+
 How to use (for testing with local websocket (ws_server.py) )
 
 1. Download all the files and put it all inside a folder.
