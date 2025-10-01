@@ -49,6 +49,10 @@ def parse_csv_string(csv_string):
     """
     try:
         parts = csv_string.strip().split(",")
+
+        if parts[0].lower() == "accel_x":
+            return None
+        
         if len(parts) != 11:
             print(f"❌ Invalid CSV format: expected 11 parts, got {len(parts)}")
             print(f"   Raw data: {csv_string}")
@@ -871,5 +875,6 @@ if __name__ == "__main__":
     print(f"Dashboard available at: http://{DASH_HOST}:{DASH_PORT}")
     print("="*60)
     app.run(debug=True, port=DASH_PORT)
+
 
 
