@@ -43,23 +43,51 @@ def elapsed_seconds():
     return time.time() - start_time
 
 def parse_csv_string(csv_string):
-    parts = csv_string.strip().split(",")
-    if len(parts) != 11:  # Updated to expect 11 parts now
-        print(f"amount of data not equal to 11, got {len(parts)}")
+    """
+    Parse CSV string with proper type conversion
+    Expected format: x,y,z,lat,lon,temp,pressure,humidity,speed,alt,phase
+    """
+    try:
+        parts = csv_string.strip().split(",")
+        if len(parts) != 11:
+            print(f"❌ Invalid CSV format: expected 11 parts, got {len(parts)}")
+            print(f"   Raw data: {csv_string}")
+            return None
+        try:
+            x = float(parts[0].strip())
+            y = float(parts[1].strip())
+            z = float(parts[2].strip())
+            lat = float(parts[3].strip())
+            lon = float(parts[4].strip())
+            temp = float(parts[5].strip())
+            pressure = float(parts[6].strip())
+            humidity = float(parts[7].strip())
+            speed = float(parts[8].strip())
+            alt = float(parts[9].strip())
+            phase = parts[10].strip()  # Keep as string, don't convert to float
+            
+            return {
+                "LIS331DLH axis x": [x],
+                "LIS331DLH axis y": [y],
+                "LIS331DLH axis z": [z],
+                "lc86g lat": [lat],
+                "lc86g lon": [lon],
+                "bme tempurature": [temp],
+                "bme pressure": [pressure],
+                "bme humidity": [humidity],
+                "lc86g speed": [speed],
+                "lc86g alt": [alt],
+                "phase": [phase]
+            }
+        except ValueError as e:
+            print(f"❌ Value conversion error: {e}")
+            print(f"   Parts: {parts}")
+            return None
+            
+    except Exception as e:
+        print(f"❌ Parse error: {e}")
+        print(f"   Raw input: {csv_string}")
         return None
-    return {
-        "LIS331DLH axis x": [float(parts[0])],
-        "LIS331DLH axis y": [float(parts[1])],
-        "LIS331DLH axis z": [float(parts[2])],
-        "lc86g lat": [float(parts[3])],
-        "lc86g lon": [float(parts[4])],
-        "bme tempurature": [float(parts[5])],
-        "bme pressure": [float(parts[6])],
-        "bme humidity": [float(parts[7])],
-        "lc86g speed": [float(parts[8])],
-        "lc86g alt": [float(parts[9])],
-        "phase": [parts[10].strip()]  # Phase string
-    }
 
 def get_api_config():
     """Get configuration from API server"""
@@ -78,145 +106,216 @@ def get_api_config():
         board_names = {str(i): f"Board {i}" for i in range(num_boards)}
     return False
 
-def data_fetcher_all(mode):
+def data_fetcher_serial():
+    """
+    Separate function for serial mode to avoid double connection
+    """
     global all_board, board_list, num_boards, board_names
     
-    # Get initial configuration
-    get_api_config()
-        
-    if mode == "api":
-            # API mode loop
-            get_api_config()
-            print("📡 Data fetcher running in API mode...")
+    num_boards = 1
+    board_names = {"0": "Serial Board"}
+    
+    print(f"📡 Attempting to connect to serial port {PORT} at {BAUDRATE} baud...")
+    
+    ser = None
+    try:
+        ser = serial.Serial(PORT, BAUDRATE, timeout=1)
+        print(f"✅ Connected to serial port {PORT}")
+    except serial.SerialException as e:
+        print(f"❌ Could not open serial port {PORT}: {e}")
+        print(f"   Make sure:")
+        print(f"   - The device is plugged in")
+        print(f"   - No other program is using the port")
+        print(f"   - You have permission to access the port")
+        return
+    except Exception as e:
+        print(f"❌ Unexpected error opening serial port: {e}")
+        return
 
-            while True:
-                try:
-                    # Use the API server
-                    url = f"http://{API_HOST}:{API_PORT}/gcs/all"
-                    r = requests.get(url, timeout=10)
-                    if r.status_code == 200:
-                        data = r.json()  # {"0": "...", "1": "..."}
-                        
-                        # Update num_boards based on actual data received
-                        received_boards = len(data)
-                        if received_boards != num_boards:
-                            print(f"📊 Board count updated: {num_boards} → {received_boards}")
-                            num_boards = received_boards
-                        
-                        print(f"✅ API Success: Received data for {received_boards} devices {list(data.keys())}")
-                    else:
-                        print(f"❌ API error: {r.status_code}")
-                        time.sleep(2)
-                        continue
-
-                    # process data
-                    all_board = []
-                    for board_id, csv_string in data.items():
-                        v = parse_csv_string(csv_string)
-                        if not v:
-                            continue
-                        all_board.append(v)
-
-                        if board_id not in board_list:
-                            board_list[board_id] = init_board_data()
-
-                        board_list[board_id]["x"].append(v["LIS331DLH axis x"][0])
-                        board_list[board_id]["y"].append(v["LIS331DLH axis y"][0])
-                        board_list[board_id]["z"].append(v["LIS331DLH axis z"][0])
-                        board_list[board_id]["lat"].append(v["lc86g lat"][0])
-                        board_list[board_id]["lon"].append(v["lc86g lon"][0])
-                        board_list[board_id]["Tempurature"].append(v["bme tempurature"][0])
-                        board_list[board_id]["Pressure"].append(v["bme pressure"][0])
-                        board_list[board_id]["Humidity"].append(v["bme humidity"][0])
-                        board_list[board_id]["speed"].append(v["lc86g speed"][0])
-                        board_list[board_id]["alt"].append(v["lc86g alt"][0])
-                        
-                        # Handle phase and deploy detection
-                        phase_raw = v["phase"][0].upper()
-                        
-                        # Detect deploy events
-                        if "MAIN" in phase_raw and "DEPLOY" in phase_raw:
-                            board_list[board_id]["main_deploy"] = True
-                            display_phase = "DESCENT"
-                        elif "SECOND" in phase_raw and "DEPLOY" in phase_raw:
-                            board_list[board_id]["second_deploy"] = True
-                            display_phase = "DESCENT"
-                        else:
-                            display_phase = phase_raw
-                        
-                        board_list[board_id]["phase"].append(display_phase)
-                        board_list[board_id]["time"].append(elapsed_seconds())
-
-                except Exception as e:
-                    print(f"❌ Fetcher crashed: {repr(e)}")
-                    traceback.print_exc()
-
-                time.sleep(1)
-                
-    elif mode == "serial":
-        # Serial mode loop
-        num_boards = 1
-        board_names = {"0": "Serial Board"}
-
+    print("📡 Serial data fetcher running...")
+    print("   Waiting for data...")
+    
+    line_count = 0
+    error_count = 0
+    
+    while True:
         try:
-            ser = serial.Serial(PORT, BAUDRATE, timeout=1)
-            print(f"✅ Connected to serial port {PORT} at {BAUDRATE} baud")
-        except Exception as e:
-            print(f"❌ Could not open serial port {PORT}: {e}")
-            return
+            # Check if serial port is still open
+            if not ser.is_open:
+                print("⚠️ Serial port closed, attempting to reconnect...")
+                try:
+                    ser.open()
+                    print("✅ Reconnected to serial port")
+                except:
+                    time.sleep(5)
+                    continue
+            
+            # Read line from serial
+            line = ser.readline().decode("utf-8", errors='ignore').strip()
+            
+            if not line:
+                continue
+            
+            line_count += 1
+            
+            # Debug: print first few lines
+            if line_count <= 3:
+                print(f"📥 Received line {line_count}: {line}")
+            
+            # Parse the CSV string
+            v = parse_csv_string(line)
+            if not v:
+                error_count += 1
+                if error_count <= 5:  # Only print first 5 errors
+                    print(f"⚠️ Skipping invalid line {line_count}")
+                continue
 
-        print("📡 Data fetcher running in SERIAL mode...")
+            # Reset error count on successful parse
+            error_count = 0
+            
+            # Update board data
+            all_board = [v]
+            board_id = "0"
+
+            if board_id not in board_list:
+                board_list[board_id] = init_board_data()
+                print(f"✅ Initialized data storage for board {board_id}")
+
+            board_list[board_id]["x"].append(v["LIS331DLH axis x"][0])
+            board_list[board_id]["y"].append(v["LIS331DLH axis y"][0])
+            board_list[board_id]["z"].append(v["LIS331DLH axis z"][0])
+            board_list[board_id]["lat"].append(v["lc86g lat"][0])
+            board_list[board_id]["lon"].append(v["lc86g lon"][0])
+            board_list[board_id]["Tempurature"].append(v["bme tempurature"][0])
+            board_list[board_id]["Pressure"].append(v["bme pressure"][0])
+            board_list[board_id]["Humidity"].append(v["bme humidity"][0])
+            board_list[board_id]["speed"].append(v["lc86g speed"][0])
+            board_list[board_id]["alt"].append(v["lc86g alt"][0])
+            
+            # Handle phase and deploy detection
+            phase_raw = v["phase"][0].upper()
+            
+            # Detect deploy events
+            if "MAIN" in phase_raw and "DEPLOY" in phase_raw:
+                board_list[board_id]["main_deploy"] = True
+                display_phase = "DESCENT"
+            elif "SECOND" in phase_raw and "DEPLOY" in phase_raw:
+                board_list[board_id]["second_deploy"] = True
+                display_phase = "DESCENT"
+            else:
+                display_phase = phase_raw
+            
+            board_list[board_id]["phase"].append(display_phase)
+            board_list[board_id]["time"].append(elapsed_seconds())
+            
+            # Periodic status update
+            if line_count % 10 == 0:
+                print(f"📊 Received {line_count} valid data points (Alt: {v['lc86g alt'][0]:.1f}m, Phase: {display_phase})")
+
+        except serial.SerialException as e:
+            print(f"❌ Serial connection error: {e}")
+            print("   Attempting to reconnect in 5 seconds...")
+            try:
+                ser.close()
+            except:
+                pass
+            time.sleep(5)
+            try:
+                ser = serial.Serial(PORT, BAUDRATE, timeout=1)
+                print("✅ Reconnected to serial port")
+            except Exception as reconnect_error:
+                print(f"❌ Reconnection failed: {reconnect_error}")
+                
+        except UnicodeDecodeError as e:
+            error_count += 1
+            if error_count <= 3:
+                print(f"⚠️ Unicode decode error: {e}")
+            continue
+            
+        except Exception as e:
+            print(f"❌ Serial fetcher error: {repr(e)}")
+            traceback.print_exc()
+            time.sleep(1)
+
+def data_fetcher_all(mode):
+    """
+    Main data fetcher that routes to appropriate mode
+    """
+    global all_board, board_list, num_boards, board_names
+    
+    if mode == "serial":
+        data_fetcher_serial()
+        
+    elif mode == "api":
+        get_api_config()
+        print("📡 Data fetcher running in API mode...")
 
         while True:
             try:
-                line = ser.readline().decode("utf-8").strip()
-                if not line:
-                    continue
-
-                v = parse_csv_string(line)
-                if not v:
-                    continue
-
-                all_board = [v]  # only 1 board in serial mode
-                board_id = "0"
-
-                if board_id not in board_list:
-                    board_list[board_id] = init_board_data()
-
-                board_list[board_id]["x"].append(v["LIS331DLH axis x"][0])
-                board_list[board_id]["y"].append(v["LIS331DLH axis y"][0])
-                board_list[board_id]["z"].append(v["LIS331DLH axis z"][0])
-                board_list[board_id]["lat"].append(v["lc86g lat"][0])
-                board_list[board_id]["lon"].append(v["lc86g lon"][0])
-                board_list[board_id]["Tempurature"].append(v["bme tempurature"][0])
-                board_list[board_id]["Pressure"].append(v["bme pressure"][0])
-                board_list[board_id]["Humidity"].append(v["bme humidity"][0])
-                board_list[board_id]["speed"].append(v["lc86g speed"][0])
-                board_list[board_id]["alt"].append(v["lc86g alt"][0])
-                
-                # Handle phase and deploy detection
-                phase_raw = v["phase"][0].upper()
-                
-                # Detect deploy events
-                if "MAIN" in phase_raw and "DEPLOY" in phase_raw:
-                    board_list[board_id]["main_deploy"] = True
-                    display_phase = "DESCENT"
-                elif "SECOND" in phase_raw and "DEPLOY" in phase_raw:
-                    board_list[board_id]["second_deploy"] = True
-                    display_phase = "DESCENT"
+                url = f"http://{API_HOST}:{API_PORT}/gcs/all"
+                r = requests.get(url, timeout=10)
+                if r.status_code == 200:
+                    data = r.json()
+                    
+                    # Update num_boards based on actual data received
+                    received_boards = len(data)
+                    if received_boards != num_boards:
+                        print(f"📊 Board count updated: {num_boards} → {received_boards}")
+                        num_boards = received_boards
+                    
+                    print(f"✅ API Success: Received data for {received_boards} devices {list(data.keys())}")
                 else:
-                    display_phase = phase_raw
-                
-                board_list[board_id]["phase"].append(display_phase)
-                board_list[board_id]["time"].append(elapsed_seconds())
+                    print(f"❌ API error: {r.status_code}")
+                    time.sleep(2)
+                    continue
+
+                # Process data
+                all_board = []
+                for board_id, csv_string in data.items():
+                    v = parse_csv_string(csv_string)
+                    if not v:
+                        continue
+                    all_board.append(v)
+
+                    if board_id not in board_list:
+                        board_list[board_id] = init_board_data()
+
+                    board_list[board_id]["x"].append(v["LIS331DLH axis x"][0])
+                    board_list[board_id]["y"].append(v["LIS331DLH axis y"][0])
+                    board_list[board_id]["z"].append(v["LIS331DLH axis z"][0])
+                    board_list[board_id]["lat"].append(v["lc86g lat"][0])
+                    board_list[board_id]["lon"].append(v["lc86g lon"][0])
+                    board_list[board_id]["Tempurature"].append(v["bme tempurature"][0])
+                    board_list[board_id]["Pressure"].append(v["bme pressure"][0])
+                    board_list[board_id]["Humidity"].append(v["bme humidity"][0])
+                    board_list[board_id]["speed"].append(v["lc86g speed"][0])
+                    board_list[board_id]["alt"].append(v["lc86g alt"][0])
+                    
+                    # Handle phase and deploy detection
+                    phase_raw = v["phase"][0].upper()
+                    
+                    # Detect deploy events
+                    if "MAIN" in phase_raw and "DEPLOY" in phase_raw:
+                        board_list[board_id]["main_deploy"] = True
+                        display_phase = "DESCENT"
+                    elif "SECOND" in phase_raw and "DEPLOY" in phase_raw:
+                        board_list[board_id]["second_deploy"] = True
+                        display_phase = "DESCENT"
+                    else:
+                        display_phase = phase_raw
+                    
+                    board_list[board_id]["phase"].append(display_phase)
+                    board_list[board_id]["time"].append(elapsed_seconds())
 
             except Exception as e:
-                print(f"❌ Serial fetcher error: {repr(e)}")
+                print(f"❌ Fetcher crashed: {repr(e)}")
                 traceback.print_exc()
 
+            time.sleep(1)
+    
     else:
         print(f"⚠️ Unknown mode: {mode}")
-
+        print(f"   Valid modes are: 'api' or 'serial'")
 def clamp_lat_lon(lat, lon):
     # keep values inside valid ranges
     lat = max(min(lat, 90.0), -90.0)
@@ -755,3 +854,4 @@ if __name__ == "__main__":
     print(f"Dashboard available at: http://{DASH_HOST}:{DASH_PORT}")
     print("="*60)
     app.run(debug=True, port=DASH_PORT)
+
