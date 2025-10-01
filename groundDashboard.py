@@ -361,6 +361,23 @@ figgeo.update_layout(
 
 # Layout with dynamic board count
 app.layout = html.Div([
+    # Logo
+    html.Div([
+        html.Img(src="/assets/wangchan_logo.png", style={"height": "60px", "margin": "10px"}),
+        html.Img(src="/assets/intel_logo.png", style={"height": "50px", "margin": "10px"}),
+        html.Img(src="/assets/space_ac_logo.png", style={"height": "60px", "margin": "10px"}),
+        html.Img(src="/assets/school_logo.png", style={"height": "60px", "margin": "10px"}),
+        html.Img(src="/assets/dti_logo.png", style={"height": "60px", "margin": "10px"}),
+        html.Img(src="/assets/kmutt_logo.png", style={"height": "60px", "margin": "10px"}),
+    ], style={
+        "display": "flex", 
+        "justifyContent": "center", 
+        "alignItems": "center",
+        "backgroundColor": "#0a1929",
+        "padding": "15px",
+        "flexWrap": "wrap",
+        "gap": "20px"
+    }),
     html.H1("Multi Ground Board Connection - Website", style={"textAlign": "center", "color" : "white"}),
     
     # API Status indicator
@@ -854,4 +871,5 @@ if __name__ == "__main__":
     print(f"Dashboard available at: http://{DASH_HOST}:{DASH_PORT}")
     print("="*60)
     app.run(debug=True, port=DASH_PORT)
+
 
