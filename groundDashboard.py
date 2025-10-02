@@ -367,12 +367,12 @@ figgeo.update_layout(
 app.layout = html.Div([
     # Logo
     html.Div([
-        html.Img(src="/assets/wangchan_logo.JPG", style={"height": "60px", "margin": "10px"}),
-        html.Img(src="/assets/intel_logo.JPG", style={"height": "50px", "margin": "10px"}),
-        html.Img(src="/assets/space_ac_logo.JPG", style={"height": "60px", "margin": "10px"}),
-        html.Img(src="/assets/school_logo.JPG", style={"height": "60px", "margin": "10px"}),
-        html.Img(src="/assets/dti_logo.JPG", style={"height": "60px", "margin": "10px"}),
-        html.Img(src="/assets/kmutt_logo.JPG", style={"height": "60px", "margin": "10px"}),
+        html.Img(src="/assets/wangchan_logo.png", style={"height": "80px", "margin": "10px"}),
+        html.Img(src="/assets/intel_logo.png", style={"height": "70px", "margin": "10px"}),
+        html.Img(src="/assets/space_ac_logo.png", style={"height": "80px", "margin": "10px"}),
+        html.Img(src="/assets/school_logo.png", style={"height": "80px", "margin": "10px"}),
+        html.Img(src="/assets/dti_logo.png", style={"height": "80px", "margin": "10px"}),
+        html.Img(src="/assets/kmutt_logo.png", style={"height": "80px", "margin": "10px"}),
     ], style={
         "display": "flex", 
         "justifyContent": "center", 
@@ -446,6 +446,98 @@ app.layout = html.Div([
         ], style={"padding": "20px", "flex": "1"}),
     ], style={"display": "flex", "gap": "20px"}),
     
+    html.Div([
+    html.H2(id="deploy-board-title", children="Board Deploy Status", 
+            style={"textAlign": "center", "color": "white", "marginBottom": "20px"}),
+    
+    html.Div([
+        # Current Phase Display
+        html.Div([
+            html.H3("Current Phase", style={"color": "cyan", "marginBottom": "10px"}),
+            html.Div(id="current-phase-display", 
+                    children="WAITING",
+                    style={
+                        "fontSize": "48px",
+                        "fontWeight": "bold",
+                        "color": "yellow",
+                        "textAlign": "center",
+                        "padding": "20px",
+                        "backgroundColor": "#1c3c6e",
+                        "borderRadius": "10px",
+                        "minHeight": "100px",
+                        "display": "flex",
+                        "alignItems": "center",
+                        "justifyContent": "center"
+                    })
+        ], style={"flex": "1", "padding": "10px"}),
+        
+        # Deploy Events Display
+        html.Div([
+            html.Div([
+                html.H3("Main Parachute", style={"color": "cyan", "marginBottom": "10px"}),
+                html.Div(id="main-deploy-display",
+                        children="⏳ WAITING",
+                        style={
+                            "fontSize": "36px",
+                            "fontWeight": "bold",
+                            "color": "orange",
+                            "textAlign": "center",
+                            "padding": "20px",
+                            "backgroundColor": "#1c3c6e",
+                            "borderRadius": "10px",
+                            "marginBottom": "20px"
+                        })
+            ]),
+            html.Div([
+                html.H3("Second Parachute", style={"color": "cyan", "marginBottom": "10px"}),
+                html.Div(id="second-deploy-display",
+                        children="⏳ WAITING",
+                        style={
+                            "fontSize": "36px",
+                            "fontWeight": "bold",
+                            "color": "orange",
+                            "textAlign": "center",
+                            "padding": "20px",
+                            "backgroundColor": "#1c3c6e",
+                            "borderRadius": "10px"
+                        })
+            ])
+        ], style={"flex": "1", "padding": "10px"}),
+        
+    ], style={"display": "flex", "gap": "20px", "marginBottom": "20px"}),
+    
+    # Additional flight info
+    html.Div([
+        html.Div([
+            html.H4("Current Altitude", style={"color": "white"}),
+            html.Div(id="current-alt-big", children="0 m",
+                    style={"fontSize": "32px", "color": "lime", "fontWeight": "bold"})
+        ], style={"flex": "1", "textAlign": "center", "padding": "15px", 
+                 "backgroundColor": "#0e2a47", "borderRadius": "8px"}),
+        
+        html.Div([
+            html.H4("Max Altitude", style={"color": "white"}),
+            html.Div(id="max-alt-big", children="0 m",
+                    style={"fontSize": "32px", "color": "cyan", "fontWeight": "bold"})
+        ], style={"flex": "1", "textAlign": "center", "padding": "15px",
+                 "backgroundColor": "#0e2a47", "borderRadius": "8px"}),
+        
+        html.Div([
+            html.H4("Current Speed", style={"color": "white"}),
+            html.Div(id="speed-big", children="0 m/s",
+                    style={"fontSize": "32px", "color": "orange", "fontWeight": "bold"})
+        ], style={"flex": "1", "textAlign": "center", "padding": "15px",
+                 "backgroundColor": "#0e2a47", "borderRadius": "8px"}),
+    ], style={"display": "flex", "gap": "20px"})
+    
+    ], style={
+        "padding": "30px",
+        "backgroundColor": "#102c55",
+        "borderRadius": "15px",
+        "margin": "20px 15px",
+        "border": "2px solid #1c3c6e"
+    }),
+
     # Status Board with phase display and deploy status
     html.Div([
         html.H2("Flight Status Board", style={"textAlign": "center", "color": "white"}),
@@ -569,8 +661,99 @@ def update_board_options(n):
     options = generate_board_options()
     count_msg = f"System: {num_boards} boards configured and active"
     return options, options, count_msg
+# Callback to update the big deploy area (phase + parachute status + big values)
+@app.callback(
+    Output("deploy-board-title", "children"),
+    Output("current-phase-display", "children"),
+    Output("current-phase-display", "style"),
+    Output("main-deploy-display", "children"),
+    Output("main-deploy-display", "style"),
+    Output("second-deploy-display", "children"),
+    Output("second-deploy-display", "style"),
+    Output("current-alt-big", "children"),
+    Output("max-alt-big", "children"),
+    Output("speed-big", "children"),
+    Input("interval", "n_intervals"),
+    Input("board-select", "value"),
+)
+def update_deploy_status(n, selected_board):
+    if selected_board not in board_list or len(board_list[selected_board]["alt"]) == 0:
+        return (
+            "Board Deploy Status - No Data",
+            "WAITING",
+            {"fontSize": "48px", "fontWeight": "bold", "color": "gray", "textAlign": "center",
+             "padding": "20px", "backgroundColor": "#1c3c6e", "borderRadius": "10px",
+             "minHeight": "100px", "display": "flex", "alignItems": "center", "justifyContent": "center"},
+            "⏳ WAITING",
+            {"fontSize": "36px", "fontWeight": "bold", "color": "orange", "textAlign": "center",
+             "padding": "20px", "backgroundColor": "#1c3c6e", "borderRadius": "10px", "marginBottom": "20px"},
+            "⏳ WAITING",
+            {"fontSize": "36px", "fontWeight": "bold", "color": "orange", "textAlign": "center",
+             "padding": "20px", "backgroundColor": "#1c3c6e", "borderRadius": "10px"},
+            "0 m", "0 m", "0 m/s"
+        )
+    
+    board_data = board_list[selected_board]
+    board_name = board_names.get(selected_board, f"Board {selected_board}")
+    
+    # Current values
+    current_phase = board_data["phase"][-1] if board_data["phase"] else "WAITING"
+    current_alt = board_data["alt"][-1]
+    max_alt = max(board_data["alt"])
+    current_speed = board_data["speed"][-1] if board_data["speed"] else 0
+    
+    # Phase style
+    phase_colors = {
+        "RISING": "#FF4500",
+        "COASTING": "#8B0000", 
+        "DESCENT": "#0e4b99",
+        "LANDED": "#006400"
+    }
+    phase_color = phase_colors.get(current_phase, "yellow")
+    phase_style = {
+        "fontSize": "48px",
+        "fontWeight": "bold",
+        "color": "white" if current_phase in ["RISING", "COASTING", "DESCENT"] else phase_color,
+        "textAlign": "center",
+        "padding": "20px",
+        "backgroundColor": phase_color if current_phase in ["RISING", "COASTING", "DESCENT"] else "#1c3c6e",
+        "borderRadius": "10px",
+        "minHeight": "100px",
+        "display": "flex",
+        "alignItems": "center",
+        "justifyContent": "center"
+    }
+    
+    # Deploy statuses
+    main_text = "✅ DEPLOYED" if board_data["main_deploy"] else "⏳ WAITING"
+    main_style = {
+        "fontSize": "36px", "fontWeight": "bold",
+        "color": "lime" if board_data["main_deploy"] else "orange",
+        "textAlign": "center", "padding": "20px",
+        "backgroundColor": "#0e4b99" if board_data["main_deploy"] else "#1c3c6e",
+        "borderRadius": "10px", "marginBottom": "20px"
+    }
+    
+    second_text = "✅ DEPLOYED" if board_data["second_deploy"] else "⏳ WAITING"
+    second_style = {
+        "fontSize": "36px", "fontWeight": "bold",
+        "color": "lime" if board_data["second_deploy"] else "orange",
+        "textAlign": "center", "padding": "20px",
+        "backgroundColor": "#0e4b99" if board_data["second_deploy"] else "#1c3c6e",
+        "borderRadius": "10px"
+    }
+    
+    return (
+        f"{board_name} - Status",
+        current_phase,
+        phase_style,
+        main_text, main_style,
+        second_text, second_style,
+        f"{current_alt:.1f} m",
+        f"{max_alt:.1f} m",
+        f"{current_speed:.1f} m/s"
+    )
 
-# Updated main callback with phase system and deploy status
 @app.callback(
     Output("2d-bmestats", "figure"),
     Output("accelerometer-chart", "figure"),
@@ -585,6 +768,7 @@ def update_board_options(n):
     Input("predicted-apogee-input", "value"),
     Input("prediction-board-select", "value")
 )
+
 def update_charts(n, selected_board, selected_metric, predicted_apogee, prediction_board):
     if selected_board not in board_list or len(board_list[selected_board]["x"]) == 0:
         return go.Figure(), go.Figure(), go.Figure(), go.Figure(), go.Figure(), go.Figure(), []
@@ -875,5 +1059,3 @@ if __name__ == "__main__":
     print(f"Dashboard available at: http://{DASH_HOST}:{DASH_PORT}")
     print("="*60)
     app.run(debug=True, port=DASH_PORT)
-
-
