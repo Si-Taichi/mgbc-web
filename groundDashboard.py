@@ -367,12 +367,12 @@ figgeo.update_layout(
 app.layout = html.Div([
     # Logo
     html.Div([
-        html.Img(src="/assets/wangchan_logo.png", style={"height": "60px", "margin": "10px"}),
-        html.Img(src="/assets/intel_logo.png", style={"height": "50px", "margin": "10px"}),
-        html.Img(src="/assets/space_ac_logo.png", style={"height": "60px", "margin": "10px"}),
-        html.Img(src="/assets/school_logo.png", style={"height": "60px", "margin": "10px"}),
-        html.Img(src="/assets/dti_logo.png", style={"height": "60px", "margin": "10px"}),
-        html.Img(src="/assets/kmutt_logo.png", style={"height": "60px", "margin": "10px"}),
+        html.Img(src="/assets/wangchan_logo.JPG", style={"height": "60px", "margin": "10px"}),
+        html.Img(src="/assets/intel_logo.JPG", style={"height": "50px", "margin": "10px"}),
+        html.Img(src="/assets/space_ac_logo.JPG", style={"height": "60px", "margin": "10px"}),
+        html.Img(src="/assets/school_logo.JPG", style={"height": "60px", "margin": "10px"}),
+        html.Img(src="/assets/dti_logo.JPG", style={"height": "60px", "margin": "10px"}),
+        html.Img(src="/assets/kmutt_logo.JPG", style={"height": "60px", "margin": "10px"}),
     ], style={
         "display": "flex", 
         "justifyContent": "center", 
@@ -875,6 +875,5 @@ if __name__ == "__main__":
     print(f"Dashboard available at: http://{DASH_HOST}:{DASH_PORT}")
     print("="*60)
     app.run(debug=True, port=DASH_PORT)
-
 
 
