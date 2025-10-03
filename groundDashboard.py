@@ -16,11 +16,11 @@ def init_board_data():
         "x": [], "y": [], "z": [],
         "lat": [], "lon": [],
         "Tempurature": [], "Pressure": [], "Humidity": [],
-        "speed": [], "alt": [],
+        "alt": [],
         "phase": [],
         "time": [],
-        "main_deploy": False,  # Track main deploy event
-        "second_deploy": False  # Track second deploy event
+        "main_deploy": False,
+        "second_deploy": False
     }
 
 all_board = []
@@ -45,7 +45,7 @@ def elapsed_seconds():
 def parse_csv_string(csv_string):
     """
     Parse CSV string with proper type conversion
-    Expected format: x,y,z,lat,lon,temp,pressure,humidity,speed,alt,phase
+    Expected format: x,y,z,lat,lon,temp,pressure,humidity,alt,phase
     """
     try:
         parts = csv_string.strip().split(",")
@@ -53,8 +53,8 @@ def parse_csv_string(csv_string):
         if parts[0].lower() == "accel_x":
             return None
         
-        if len(parts) != 11:
-            print(f"❌ Invalid CSV format: expected 11 parts, got {len(parts)}")
+        if len(parts) != 10:
+            print(f"❌ Invalid CSV format: expected 10 parts, got {len(parts)}")
             print(f"   Raw data: {csv_string}")
             return None
         try:
@@ -66,9 +66,8 @@ def parse_csv_string(csv_string):
             temp = float(parts[5].strip())
             pressure = float(parts[6].strip())
             humidity = float(parts[7].strip())
-            speed = float(parts[8].strip())
-            alt = float(parts[9].strip())
-            phase = parts[10].strip()  # Keep as string, don't convert to float
+            alt = float(parts[8].strip())
+            phase = parts[9].strip()    # Keep as string, don't convert to float
             
             return {
                 "LIS331DLH axis x": [x],
@@ -79,10 +78,10 @@ def parse_csv_string(csv_string):
                 "bme tempurature": [temp],
                 "bme pressure": [pressure],
                 "bme humidity": [humidity],
-                "lc86g speed": [speed],
                 "lc86g alt": [alt],
                 "phase": [phase]
             }
+
         except ValueError as e:
             print(f"❌ Value conversion error: {e}")
             print(f"   Parts: {parts}")
@@ -193,7 +192,6 @@ def data_fetcher_serial():
             board_list[board_id]["Tempurature"].append(v["bme tempurature"][0])
             board_list[board_id]["Pressure"].append(v["bme pressure"][0])
             board_list[board_id]["Humidity"].append(v["bme humidity"][0])
-            board_list[board_id]["speed"].append(v["lc86g speed"][0])
             board_list[board_id]["alt"].append(v["lc86g alt"][0])
             
             # Handle phase and deploy detection
@@ -249,7 +247,6 @@ def data_fetcher_all(mode):
     
     if mode == "serial":
         data_fetcher_serial()
-        
     elif mode == "api":
         get_api_config()
         print("📡 Data fetcher running in API mode...")
@@ -292,7 +289,6 @@ def data_fetcher_all(mode):
                     board_list[board_id]["Tempurature"].append(v["bme tempurature"][0])
                     board_list[board_id]["Pressure"].append(v["bme pressure"][0])
                     board_list[board_id]["Humidity"].append(v["bme humidity"][0])
-                    board_list[board_id]["speed"].append(v["lc86g speed"][0])
                     board_list[board_id]["alt"].append(v["lc86g alt"][0])
                     
                     # Handle phase and deploy detection
@@ -337,52 +333,64 @@ def generate_board_options():
 
 # Create figures
 fig2d = go.Figure()
-fig2d.update_layout(title="Temperature, Pressure, Humidity",
-                    xaxis_title="Reading #", yaxis_title="Value")
-
-fig_speed = go.Figure()
-fig_speed.update_layout(title="Speed Over Time",
-                       xaxis_title="Time (seconds)", yaxis_title="Speed (m/s)")
+fig2d.update_layout(
+    paper_bgcolor="#161b22",
+    plot_bgcolor="#0d1117",
+    font=dict(color="white", family="Inter, Segoe UI, sans-serif"),
+    margin=dict(l=40, r=20, t=40, b=40)
+)
 
 fig_alt = go.Figure()
-fig_alt.update_layout(title="Altitude Over Time",
-                     xaxis_title="Time (seconds)", yaxis_title="Altitude (m)")
+fig_alt.update_layout(
+    paper_bgcolor="#161b22",
+    plot_bgcolor="#0d1117",
+    font=dict(color="white", family="Inter, Segoe UI, sans-serif"),
+    margin=dict(l=40, r=20, t=40, b=40)
+)
 
 fig_accel = go.Figure()
-fig_accel.update_layout(title="Accelerometer Data (LIS331DLH)",
-                       xaxis_title="Time (seconds)", yaxis_title="Acceleration (g)")
+fig_accel.update_layout(
+    paper_bgcolor="#161b22",
+    plot_bgcolor="#0d1117",
+    font=dict(color="white", family="Inter, Segoe UI, sans-serif"),
+    margin=dict(l=40, r=20, t=40, b=40)
+)
 
 fig3d = go.Figure()
 figgeo = go.Figure()
 
-fig3d.update_layout(scene=dict(aspectmode="auto",bgcolor="#102c55"),
-                    margin=dict(l=0, r=0, t=30, b=0),
-                    title="Rocket 3D Trajectory")
+fig3d.update_layout(
+    paper_bgcolor="#161b22",
+    plot_bgcolor="#0d1117",
+    font=dict(color="white", family="Inter, Segoe UI, sans-serif"),
+    margin=dict(l=40, r=20, t=40, b=40)
+)
 
 figgeo.update_layout(
-    geo=dict(projection=dict(type="orthographic")),
-    title="Latitude Longitude Position")
+    paper_bgcolor="#161b22",
+    plot_bgcolor="#0d1117",
+    font=dict(color="white", family="Inter, Segoe UI, sans-serif"),
+    margin=dict(l=40, r=20, t=40, b=40)
+)
 
 # Layout with dynamic board count
 app.layout = html.Div([
-    # Logo
     html.Div([
-        html.Img(src="/assets/wangchan_logo.png", style={"height": "80px", "margin": "10px"}),
-        html.Img(src="/assets/intel_logo.png", style={"height": "70px", "margin": "10px"}),
-        html.Img(src="/assets/space_ac_logo.png", style={"height": "80px", "margin": "10px"}),
-        html.Img(src="/assets/school_logo.png", style={"height": "80px", "margin": "10px"}),
-        html.Img(src="/assets/dti_logo.png", style={"height": "80px", "margin": "10px"}),
-        html.Img(src="/assets/kmutt_logo.png", style={"height": "80px", "margin": "10px"}),
-    ], style={
-        "display": "flex", 
-        "justifyContent": "center", 
-        "alignItems": "center",
-        "backgroundColor": "#0a1929",
-        "padding": "15px",
-        "flexWrap": "wrap",
-        "gap": "20px"
-    }),
-    html.H1("Multi Ground Board Connection - Website", style={"textAlign": "center", "color" : "white"}),
+        html.Div([
+            html.Img(src="/assets/wangchan_logo.png", style={"height": "60px"}),
+            html.Img(src="/assets/intel_logo.png", style={"height": "55px"}),
+            html.Img(src="/assets/space_ac_logo.png", style={"height": "60px"}),
+            html.Img(src="/assets/school_logo.png", style={"height": "60px"}),
+            html.Img(src="/assets/dti_logo.png", style={"height": "60px"}),
+            html.Img(src="/assets/kmutt_logo.png", style={"height": "60px"}),
+        ], style={
+            "display": "flex", "justifyContent": "center", "gap": "25px",
+            "flexWrap": "wrap", "marginBottom": "20px"
+        }),
+        html.H1("Multi Ground Board Dashboard",
+                style={"textAlign": "center", "color": "white", "marginBottom": "30px"}),
+    ], className="card"),
+
     
     # API Status indicator
     html.Div([
@@ -397,7 +405,7 @@ app.layout = html.Div([
     # Control Panel Row
     html.Div([
         html.Div([
-            html.Label("Select board to view", style={"color" : "white"}),
+            html.Label("Select board to view"),
             dcc.Dropdown(
                 id="board-select",
                 options=[],  # Will be populated dynamically
@@ -408,7 +416,7 @@ app.layout = html.Div([
         ], style={"padding" : "20px", "flex": "1"}),
         
         html.Div([
-            html.Label("Select BME Metric:", style={"color" : "white"}),
+            html.Label("Select BME Metric:"),
             dcc.Dropdown(
                 id="bme-dropdown",
                 options=[
@@ -431,7 +439,7 @@ app.layout = html.Div([
                 placeholder="Enter predicted apogee",
                 style={"width": "150px", "margin": "5px"}
             ),
-            html.Label("Board for prediction:", style={"color": "white", "marginTop": "10px"}),
+            html.Label("Board for prediction:", style={"marginTop": "10px"}),
             dcc.Dropdown(
                 id="prediction-board-select",
                 options=[],  # Will be populated dynamically
@@ -448,7 +456,7 @@ app.layout = html.Div([
 
     # Status Board with phase display and deploy status
     html.Div([
-        html.H2("Flight Status Board", style={"textAlign": "center", "color": "white"}),
+        html.H2("Flight Status Board", style={"textAlign": "center"}),
         dash_table.DataTable(
             id="status-board",
             columns=[
@@ -465,16 +473,15 @@ app.layout = html.Div([
             ],
             style_table={"overflowX": "auto"},
             style_header={
-                "backgroundColor": "#1c3c6e",
+                "backgroundColor": "#21262d",
                 "color": "white",
-                "fontWeight": "bold",
-                "textAlign": "center"
+                "fontWeight": "600"
             },
             style_cell={
-                "backgroundColor": "#102c55",
+                "backgroundColor": "#0d1117",
                 "color": "white",
                 "textAlign": "center",
-                "padding": "12px"
+                "padding": "10px"
             },
             style_data_conditional=[
                 {
@@ -502,37 +509,26 @@ app.layout = html.Div([
                 }
             ]
         )
-    ], style={"padding" : "15px"}),
+    ], className="card", style={"margin": "20px 0"}),
 
     # Row 1: BME + Accelerometer
     html.Div([
-        dcc.Graph(id="2d-bmestats", figure=fig2d,
-                  style={"height": "350px", "flex": "1", "borderRadius": "1px solid gray", 
-                         "padding": "10px", "boxShadow": "0 4px 10px rgba(0,0,0,0.1)"}),
-        dcc.Graph(id="accelerometer-chart", figure=fig_accel,
-                  style={"height": "350px", "flex": "1", "borderRadius": "1px solid gray", 
-                         "padding": "10px", "boxShadow": "0 4px 10px rgba(0,0,0,0.1)"}),
-    ], style={"display": "flex", "gap": "20px", "marginBottom": "20px"}),
+        dcc.Graph(id="2d-bmestats", figure=fig2d, style={"height": "350px", "flex": "1"}),
+        dcc.Graph(id="accelerometer-chart", figure=fig_accel, style={"height": "350px", "flex": "1"}),
+    ], className="card", style={"display": "flex", "gap": "20px", "marginBottom": "20px"}),
 
-    # Row 2: Speed + Altitude (separate graphs)
-    html.Div([
-        dcc.Graph(id="speed-chart", figure=fig_speed,
-                  style={"height": "350px", "flex": "1", "borderRadius": "1px solid gray", 
-                         "padding": "10px", "boxShadow": "0 4px 10px rgba(0,0,0,0.1)"}),
-        dcc.Graph(id="altitude-chart", figure=fig_alt,
-                  style={"height": "350px", "flex": "1", "borderRadius": "1px solid gray", 
-                         "padding": "10px", "boxShadow": "0 4px 10px rgba(0,0,0,0.1)"}),
-    ], style={"display": "flex", "gap": "20px", "marginBottom": "20px"}),
-
-    # Row 3: 3D Trajectory + Globe
+    # Row 2: 3D Trajectory + Globe
     html.Div([
         dcc.Graph(id="3d-trajectory", figure=fig3d,
-                  style={"height": "400px", "flex": "1", "borderRadius": "1px solid gray", 
-                         "padding": "10px", "boxShadow": "0 4px 10px rgba(0,0,0,0.1)"}),
+                  style={"height": "400px", "flex": "1"}),
         dcc.Graph(id="globe-latlon", figure=figgeo,
-                  style={"height": "400px", "flex": "1", "borderRadius": "1px solid gray", 
-                         "padding": "10px", "boxShadow": "0 4px 10px rgba(0,0,0,0.1)"}),
-    ], style={"display": "flex", "gap": "10px"}),
+                  style={"height": "400px", "flex": "1"}),
+    ], className="card", style={"display": "flex", "gap": "20px", "marginBottom": "20px"}),
+
+    # Row 3: Altitude 
+    html.Div([
+        dcc.Graph(id="altitude-chart", figure=fig_alt, style={"height": "350px", "flex": "1"}),
+    ], className="card", style={"display": "flex", "gap": "20px", "marginBottom": "20px"}),
 
     # Hidden div to store prediction memory
     html.Div(id="prediction-memory-store", style={"display": "none"}),
@@ -573,7 +569,6 @@ def update_board_options(n):
 @app.callback(
     Output("2d-bmestats", "figure"),
     Output("accelerometer-chart", "figure"),
-    Output("speed-chart", "figure"),
     Output("altitude-chart", "figure"),
     Output("3d-trajectory", "figure"),
     Output("globe-latlon", "figure"),
@@ -587,8 +582,7 @@ def update_board_options(n):
 
 def update_charts(n, selected_board, selected_metric, predicted_apogee, prediction_board):
     if selected_board not in board_list or len(board_list[selected_board]["x"]) == 0:
-        return go.Figure(), go.Figure(), go.Figure(), go.Figure(), go.Figure(), go.Figure(), []
-
+        return go.Figure(), go.Figure(), go.Figure(), go.Figure(), go.Figure(), []
     board_data = board_list[selected_board]
 
     # Status Board Data with phase system and deploy status
@@ -724,21 +718,6 @@ def update_charts(n, selected_board, selected_metric, predicted_apogee, predicti
         plot_bgcolor="#102c55", paper_bgcolor="#102c55", font=dict(color="white")
     )
 
-    # Speed Chart
-    fig_speed = go.Figure(go.Scatter(
-        y=board_data["speed"],
-        x=board_data["time"],
-        mode="lines+markers",
-        name="Speed",
-        line=dict(color="orange")
-    ))
-    fig_speed.update_layout(
-        title=f"Speed Over Time ({selected_board_name})",
-        xaxis_title="Time (seconds)",
-        yaxis_title="Speed (m/s)",
-        plot_bgcolor="#102c55", paper_bgcolor="#102c55", font=dict(color="white")
-    )
-
     # Altitude Chart with all saved prediction lines
     fig_alt = go.Figure()
     fig_alt.add_trace(go.Scatter(
@@ -860,10 +839,9 @@ def update_charts(n, selected_board, selected_metric, predicted_apogee, predicti
         font=dict(color="white")   
     )
 
-    return fig2d, fig_accel, fig_speed, fig_alt, fig3d, figgeo, status_rows
+    return fig2d, fig_accel, fig_alt, fig3d, figgeo, status_rows
 
 if __name__ == "__main__":
-
     print("Starting Groundboard Dashboard...")
     if MODE == "api":
         print(f"Dashboard will connect to API server at: http://{API_HOST}:{API_PORT}/gcs/all")
