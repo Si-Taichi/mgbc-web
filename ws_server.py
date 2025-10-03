@@ -25,7 +25,6 @@ class SampleDataGenerator:
                 'temp': random.uniform(20, 25),
                 'pressure': random.uniform(1010, 1020),
                 'humidity': random.uniform(40, 60),
-                'speed': 0.0,
                 'time_offset': random.uniform(0, 15),  # Stagger the flights
                 'main_deploy_triggered': False,
                 'second_deploy_triggered': False,
@@ -61,7 +60,6 @@ class SampleDataGenerator:
             # Not launched yet - GROUND phase
             flight_phase = "GROUND"
             alt = state['alt'] + random.uniform(-1, 1)  # Small ground noise
-            speed = random.uniform(0, 2)  # Very low speed on ground
             temp_change = random.uniform(-0.5, 0.5)  # Ambient temperature variation
             pressure_change = random.uniform(-2, 2)  # Weather pressure variation
             
@@ -71,7 +69,6 @@ class SampleDataGenerator:
                 state['launch_time'] = elapsed_time
             flight_phase = "RISING"
             alt = state['alt'] + (flight_time ** 2) * 5  # Accelerating upward
-            speed = flight_time * 10
             temp_change = -flight_time * 0.5  # Getting colder
             pressure_change = -flight_time * 2
             
@@ -79,7 +76,6 @@ class SampleDataGenerator:
             flight_phase = "COASTING"
             t_ascent = flight_time - 10
             alt = state['alt'] + 500 + t_ascent * 25 - (t_ascent ** 2) * 0.3  # Slowing down
-            speed = max(0, 50 - t_ascent * 2)
             temp_change = -10 - t_ascent * 0.3
             pressure_change = -30 - t_ascent * 1.5
             
@@ -91,7 +87,6 @@ class SampleDataGenerator:
             t_apogee = flight_time - 30
             max_alt = state['alt'] + 500 + 20 * 25 - (20 ** 2) * 0.3
             alt = max_alt - (t_apogee ** 2) * 2  # Start falling slowly
-            speed = t_apogee * 4
             temp_change = -16
             pressure_change = -60
             
@@ -103,7 +98,6 @@ class SampleDataGenerator:
             t_descent = flight_time - 35
             max_alt = state['alt'] + 500 + 20 * 25 - (20 ** 2) * 0.3
             alt = max(state['alt'], max_alt - 50 - (t_descent ** 2) * 3)  # Falling faster
-            speed = min(100, t_descent * 8)
             temp_change = -16 + t_descent * 0.2  # Warming up as descending
             pressure_change = -60 + t_descent * 1.2
             
@@ -125,7 +119,6 @@ class SampleDataGenerator:
             flight_phase = "LANDED"
             time_since_landing = elapsed_time - state['landing_time']
             alt = state['alt'] + random.uniform(0, 2)  # Small ground variations
-            speed = random.uniform(0, 1)  # Nearly zero speed
             temp_change = random.uniform(-0.3, 0.3) + (time_since_landing * 0.05)  # Gradually warming up
             pressure_change = random.uniform(-1, 1)  # Ambient pressure
         
@@ -175,7 +168,6 @@ class SampleDataGenerator:
             'temp': state['temp'] + temp_change + random.uniform(-0.5, 0.5),
             'pressure': state['pressure'] + pressure_change + random.uniform(-1, 1),
             'humidity': max(0, min(100, state['humidity'] + random.uniform(-2, 2))),
-            'speed': speed + random.uniform(-2, 2),
             'alt': max(0, alt + random.uniform(-5, 5)),
             'phase': flight_phase
         }
@@ -191,7 +183,6 @@ class SampleDataGenerator:
             f"{data['temp']:.2f}",
             f"{data['pressure']:.2f}",
             f"{data['humidity']:.2f}",
-            f"{data['speed']:.2f}",
             f"{data['alt']:.2f}",
             data['phase']  # 11th data point - flight phase
         ])
@@ -223,8 +214,8 @@ class SampleDataGenerator:
                         if counter % 10 == 0 and device_id == 0:
                             print(f"Device {device_id}: {flight_data['phase']} - "
                                   f"Alt: {flight_data['alt']:.1f}m, "
-                                  f"Speed: {flight_data['speed']:.1f}m/s, "
                                   f"Temp: {flight_data['temp']:.1f}°C")
+
                 
                 counter += 1
                 time.sleep(0.5)  # Update every 500ms
@@ -258,7 +249,7 @@ def index():
         <li><a href="/health">/health</a> - Health check</li>
     </ul>
     <p>Data format: CSV string with accelerometer, GPS, BME sensor data, and flight phase</p>
-    <p>CSV Format: accel_x,accel_y,accel_z,lat,lon,temp,pressure,humidity,speed,alt,phase</p>
+    <p>CSV Format: accel_x,accel_y,accel_z,lat,lon,temp,pressure,humidity,alt,phase</p>
     <p>Flight Phases: GROUND, RISING, COASTING, MAIN DEPLOY, SECOND DEPLOY, LANDED</p>
     
     <h2>Board Configuration</h2>
@@ -269,14 +260,12 @@ def index():
 
 @app.route('/gcs/all')
 def get_all_devices():
-    """Get data from all devices - matches your original groundboard expectation"""
     with data_lock:
         # Return data in the format your groundboard expects
         return jsonify(dict(device_data))
 
-@app.route('/gcs/device/<int:device_id>')
+@app.route('/gcs/<int:device_id>')
 def get_device_data(device_id):
-    """Get data from specific device"""
     with data_lock:
         device_key = str(device_id)
         if device_key in device_data:
@@ -329,10 +318,7 @@ if __name__ == '__main__':
     
     # Start data generation in background
     start_data_generator()
-    
-    print("Starting Flask API server...")
-    print("API will be available at: http://localhost:5000")
-    print("All devices endpoint: http://localhost:5000/gcs/all")
+
     print("="*60)
     
     # Start Flask server
