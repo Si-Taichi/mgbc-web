@@ -7,7 +7,7 @@ import random
 import traceback
 import math
 import serial
-from config import NUM_BOARDS, MODE, PORT, BAUDRATE, DASHBOARD_UPDATE_INTERVAL, API_HOST, API_PORT, DASH_HOST, DASH_PORT
+from config import NUM_BOARDS, MODE, PORT, BAUDRATE, DASHBOARD_UPDATE_INTERVAL, API_ADDRESS, DASH_HOST, DASH_PORT
 
 app = Dash(__name__, update_title=None, title='kits board UGCS')
 
@@ -96,7 +96,7 @@ def get_api_config():
     """Get configuration from API server"""
     global num_boards, board_names
     try:
-        r = requests.get(f"http://{API_HOST}:{API_PORT}/status", timeout=5)
+        r = requests.get(f"{API_ADDRESS}/status", timeout=5)
         if r.status_code == 200:
             data = r.json()
             num_boards = data.get("configured_boards", 6)
@@ -253,7 +253,7 @@ def data_fetcher_all(mode):
 
         while True:
             try:
-                url = f"http://{API_HOST}:{API_PORT}/gcs/all"
+                url = f"{API_ADDRESS}/gcs/all"
                 r = requests.get(url, timeout=10)
                 if r.status_code == 200:
                     data = r.json()
@@ -844,7 +844,7 @@ def update_charts(n, selected_board, selected_metric, predicted_apogee, predicti
 if __name__ == "__main__":
     print("Starting Groundboard Dashboard...")
     if MODE == "api":
-        print(f"Dashboard will connect to API server at: http://{API_HOST}:{API_PORT}/gcs/all")
+        print(f"Dashboard will connect to API server at: {API_ADDRESS}/gcs/all")
     else:
         print(f"Dashboard will read from SERIAL port {PORT} at {BAUDRATE} baud")
 
@@ -853,4 +853,3 @@ if __name__ == "__main__":
     print(f"Dashboard available at: http://{DASH_HOST}:{DASH_PORT}")
     print("="*60)
     app.run(debug=True, port=DASH_PORT,use_reloader=False)
-
