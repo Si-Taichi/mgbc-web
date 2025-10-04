@@ -6,7 +6,7 @@ import subprocess
 import time
 import sys
 import os
-from config import API_HOST, API_PORT, DASH_HOST, DASH_PORT
+from config import API_ADDRESS, DASH_HOST, DASH_PORT
 
 def start_api_server():
     """Start the API server"""
@@ -49,7 +49,7 @@ def main():
         return
     
     print("📋 System Architecture:")
-    print(f"   API Server (Port {API_PORT}) → HTTP REST API → Dashboard (Port {DASH_PORT})")
+    print(f"   API Server (Address {API_ADDRESS}) → HTTP REST API → Dashboard (Port {DASH_PORT})")
     print()
     
     # Start API server
@@ -70,10 +70,10 @@ def main():
     print("="*70)
     print("✅ SYSTEM STARTED SUCCESSFULLY!")
     print("="*70)
-    print(f"🔧 API Server:        http://{API_HOST}:{API_PORT}")
-    print(f"   📄 Status page:    http://{API_HOST}:{API_PORT}/")
-    print(f"   📊 All devices:    http://{API_HOST}:{API_PORT}/gcs/all")
-    print(f"   🏥 Health check:   http://{API_HOST}:{API_PORT}/health")
+    print(f"🔧 API Server:        {API_ADDRESS}")
+    print(f"   📄 Status page:    {API_ADDRESS}/")
+    print(f"   📊 All devices:    {API_ADDRESS}/gcs/all")
+    print(f"   🏥 Health check:   {API_ADDRESS}/health")
     print()
     print(f"📊 Groundboard:       http://{DASH_HOST}:{DASH_PORT}")
     print("   🎯 Live dashboard")
