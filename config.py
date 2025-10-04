@@ -34,8 +34,7 @@ BAUDRATE = "9600"
 # ==========================================
 
 # API Server settings
-API_HOST = "localhost"
-API_PORT = 5000
+API_ADDRESS = "http://localhost:5000"
 
 # Dashboard settings
 DASH_HOST = "localhost"
@@ -113,7 +112,7 @@ def get_board_options():
 
 def get_api_url():
     """Get the API base URL"""
-    return f"http://{API_HOST}:{API_PORT}"
+    return API_ADDRESS
 
 def get_dashboard_url():
     """Get the dashboard URL"""  
@@ -132,5 +131,4 @@ if __name__ == '__main__':
         name = BOARD_NAMES.get(i, f"Board {i}")
         print(f"  {i}: {name}")
     print("\nTo change the number of boards, edit NUM_BOARDS in this file.")
-
 
