@@ -852,4 +852,5 @@ if __name__ == "__main__":
 
     print(f"Dashboard available at: http://{DASH_HOST}:{DASH_PORT}")
     print("="*60)
-    app.run(debug=True, port=DASH_PORT)
+    app.run(debug=True, port=DASH_PORT,use_reloader=False)
+
