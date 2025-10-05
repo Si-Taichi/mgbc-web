@@ -333,15 +333,19 @@ figgeo.update_layout(
 app.layout = html.Div([
     html.Div([
         html.Div([
-            html.Img(src="/assets/wangchan_logo.png", style={"height": "60px"}),
-            html.Img(src="/assets/intel_logo.png", style={"height": "55px"}),
-            html.Img(src="/assets/space_ac_logo.png", style={"height": "60px"}),
-            html.Img(src="/assets/school_logo.png", style={"height": "60px"}),
-            html.Img(src="/assets/dti_logo.png", style={"height": "60px"}),
-            html.Img(src="/assets/kmutt_logo.png", style={"height": "60px"}),
+            html.Img(src="/assets/all_logo.png", style={
+                "width": "100%",
+                "maxWidth": "1200px",
+                "height": "auto",
+                "backgroundColor": "white",
+                "padding": "10px",
+                "borderRadius": "8px",
+                "marginBottom": "20px"
+            })
         ], style={
-            "display": "flex", "justifyContent": "center", "gap": "25px",
-            "flexWrap": "wrap", "marginBottom": "20px"
+            "display": "flex",
+            "justifyContent": "center",
+            "marginBottom": "20px"
         }),
         html.H1("Multi Ground Board Dashboard",
                 style={"textAlign": "center", "color": "white", "marginBottom": "30px"}),
@@ -363,7 +367,7 @@ app.layout = html.Div([
                 options=[],
                 value="0",
                 clearable=False,
-                style={"width": "200px"}
+                style={"width": "200px", "color": "black"}
             )
         ], style={"padding": "20px", "flex": "1"}),
 
@@ -377,7 +381,7 @@ app.layout = html.Div([
                     {"label": "Humidity", "value": "Humidity"}
                 ],
                 value="Tempurature", clearable=False,
-                style={"width": "200px"}
+                style={"width": "200px", "color": "black"}
             ),
         ], style={"padding": "20px", "flex": "1"}),
 
@@ -396,7 +400,7 @@ app.layout = html.Div([
                 options=[],
                 value="0",
                 clearable=False,
-                style={"width": "150px"}
+                style={"width": "150px", "color": "black"}
             ),
             html.Button("Save Prediction", id="save-prediction-btn", 
                        style={"backgroundColor": "#4CAF50", "color": "white", "border": "none", 
