@@ -3,11 +3,10 @@ import plotly.graph_objects as go
 import requests
 import threading
 import time
-import random
 import traceback
 import math
 import serial
-from config import NUM_BOARDS, MODE, PORT, BAUDRATE, DASHBOARD_UPDATE_INTERVAL, API_ADDRESS, DASH_HOST, DASH_PORT
+from config import NUM_BOARDS, MODE, PORT, BAUDRATE, DASHBOARD_UPDATE_INTERVAL, API_ADDRESS, DASH_HOST, DASH_PORT, BOARD_NAMES
 
 app = Dash(__name__, update_title=None, title='kits board UGCS')
 
@@ -26,13 +25,13 @@ def init_board_data():
 all_board = []
 board_list = {}
 start_time = time.time()
-num_boards = NUM_BOARDS  # Will be updated dynamically from API
-board_names = {}  # Will be populated from API
-prediction_memory = {}  # Store predictions: {board_id: predicted_apogee_value}
+num_boards = NUM_BOARDS
+board_names = BOARD_NAMES
+prediction_memory = {}
 
 def latlon_to_xy(lat0, lon0, lat, lon):
     """Convert lat/lon to local x,y in meters relative to lat0,lon0"""
-    R = 6371000.0  # Earth radius in meters
+    R = 6371000.0
     dlat = math.radians(lat - lat0)
     dlon = math.radians(lon - lon0)
     x = dlon * R * math.cos(math.radians((lat + lat0) / 2.0))
@@ -54,9 +53,8 @@ def parse_csv_string(csv_string):
             return None
         
         if len(parts) != 10:
-            print(f"❌ Invalid CSV format: expected 10 parts, got {len(parts)}")
-            print(f"   Raw data: {csv_string}")
             return None
+            
         try:
             x = float(parts[0].strip())
             y = float(parts[1].strip())
@@ -67,7 +65,7 @@ def parse_csv_string(csv_string):
             pressure = float(parts[6].strip())
             humidity = float(parts[7].strip())
             alt = float(parts[8].strip())
-            phase = parts[9].strip()    # Keep as string, don't convert to float
+            phase = parts[9].strip()
             
             return {
                 "LIS331DLH axis x": [x],
@@ -83,31 +81,10 @@ def parse_csv_string(csv_string):
             }
 
         except ValueError as e:
-            print(f"❌ Value conversion error: {e}")
-            print(f"   Parts: {parts}")
             return None
             
     except Exception as e:
-        print(f"❌ Parse error: {e}")
-        print(f"   Raw input: {csv_string}")
         return None
-
-def get_api_config():
-    """Get configuration from API server"""
-    global num_boards, board_names
-    try:
-        r = requests.get(f"{API_ADDRESS}/status", timeout=5)
-        if r.status_code == 200:
-            data = r.json()
-            num_boards = data.get("configured_boards", 6)
-            board_names = data.get("board_names", {})
-            print(f"✅ Retrieved API config: {num_boards} boards")
-            return True
-    except Exception as e:
-        print(f"⚠️ Could not get API config: {e}, using defaults")
-        num_boards = 6
-        board_names = {str(i): f"Board {i}" for i in range(num_boards)}
-    return False
 
 def data_fetcher_serial():
     """
@@ -126,24 +103,18 @@ def data_fetcher_serial():
         print(f"✅ Connected to serial port {PORT}")
     except serial.SerialException as e:
         print(f"❌ Could not open serial port {PORT}: {e}")
-        print(f"   Make sure:")
-        print(f"   - The device is plugged in")
-        print(f"   - No other program is using the port")
-        print(f"   - You have permission to access the port")
         return
     except Exception as e:
         print(f"❌ Unexpected error opening serial port: {e}")
         return
 
     print("📡 Serial data fetcher running...")
-    print("   Waiting for data...")
     
     line_count = 0
     error_count = 0
     
     while True:
         try:
-            # Check if serial port is still open
             if not ser.is_open:
                 print("⚠️ Serial port closed, attempting to reconnect...")
                 try:
@@ -153,7 +124,6 @@ def data_fetcher_serial():
                     time.sleep(5)
                     continue
             
-            # Read line from serial
             line = ser.readline().decode("utf-8", errors='ignore').strip()
             
             if not line:
@@ -161,22 +131,18 @@ def data_fetcher_serial():
             
             line_count += 1
             
-            # Debug: print first few lines
             if line_count <= 3:
                 print(f"📥 Received line {line_count}: {line}")
             
-            # Parse the CSV string
             v = parse_csv_string(line)
             if not v:
                 error_count += 1
-                if error_count <= 5:  # Only print first 5 errors
+                if error_count <= 5:
                     print(f"⚠️ Skipping invalid line {line_count}")
                 continue
 
-            # Reset error count on successful parse
             error_count = 0
             
-            # Update board data
             all_board = [v]
             board_id = "0"
 
@@ -194,10 +160,8 @@ def data_fetcher_serial():
             board_list[board_id]["Humidity"].append(v["bme humidity"][0])
             board_list[board_id]["alt"].append(v["lc86g alt"][0])
             
-            # Handle phase and deploy detection
             phase_raw = v["phase"][0].upper()
             
-            # Detect deploy events
             if "MAIN" in phase_raw and "DEPLOY" in phase_raw:
                 board_list[board_id]["main_deploy"] = True
                 display_phase = "DESCENT"
@@ -210,13 +174,11 @@ def data_fetcher_serial():
             board_list[board_id]["phase"].append(display_phase)
             board_list[board_id]["time"].append(elapsed_seconds())
             
-            # Periodic status update
             if line_count % 10 == 0:
                 print(f"📊 Received {line_count} valid data points (Alt: {v['lc86g alt'][0]:.1f}m, Phase: {display_phase})")
 
         except serial.SerialException as e:
             print(f"❌ Serial connection error: {e}")
-            print("   Attempting to reconnect in 5 seconds...")
             try:
                 ser.close()
             except:
@@ -248,8 +210,8 @@ def data_fetcher_all(mode):
     if mode == "serial":
         data_fetcher_serial()
     elif mode == "api":
-        get_api_config()
         print("📡 Data fetcher running in API mode...")
+        print(f"   Endpoint: {API_ADDRESS}/gcs/all")
 
         while True:
             try:
@@ -258,13 +220,16 @@ def data_fetcher_all(mode):
                 if r.status_code == 200:
                     data = r.json()
                     
-                    # Update num_boards based on actual data received
+                    # Update num_boards and board_names based on actual data received
                     received_boards = len(data)
                     if received_boards != num_boards:
                         print(f"📊 Board count updated: {num_boards} → {received_boards}")
                         num_boards = received_boards
                     
-                    print(f"✅ API Success: Received data for {received_boards} devices {list(data.keys())}")
+                    # Update board names for any boards we don't have names for
+                    for board_id in data.keys():
+                        if board_id not in board_names:
+                            board_names[board_id] = f"Board {board_id}"
                 else:
                     print(f"❌ API error: {r.status_code}")
                     time.sleep(2)
@@ -291,10 +256,8 @@ def data_fetcher_all(mode):
                     board_list[board_id]["Humidity"].append(v["bme humidity"][0])
                     board_list[board_id]["alt"].append(v["lc86g alt"][0])
                     
-                    # Handle phase and deploy detection
                     phase_raw = v["phase"][0].upper()
                     
-                    # Detect deploy events
                     if "MAIN" in phase_raw and "DEPLOY" in phase_raw:
                         board_list[board_id]["main_deploy"] = True
                         display_phase = "DESCENT"
@@ -315,12 +278,6 @@ def data_fetcher_all(mode):
     
     else:
         print(f"⚠️ Unknown mode: {mode}")
-        print(f"   Valid modes are: 'api' or 'serial'")
-def clamp_lat_lon(lat, lon):
-    # keep values inside valid ranges
-    lat = max(min(lat, 90.0), -90.0)
-    lon = ((lon + 180.0) % 360.0) - 180.0
-    return lat, lon
 
 def generate_board_options():
     """Generate board options dynamically"""
@@ -329,7 +286,6 @@ def generate_board_options():
         board_name = board_names.get(str(i), f"Board {i}")
         options.append({"label": board_name, "value": str(i)})
     return options
-
 
 # Create figures
 fig2d = go.Figure()
@@ -373,7 +329,7 @@ figgeo.update_layout(
     margin=dict(l=40, r=20, t=40, b=40)
 )
 
-# Layout with dynamic board count
+# Layout
 app.layout = html.Div([
     html.Div([
         html.Div([
@@ -391,13 +347,9 @@ app.layout = html.Div([
                 style={"textAlign": "center", "color": "white", "marginBottom": "30px"}),
     ], className="card"),
 
-    
-    # API Status indicator
     html.Div([
-        html.P("📡 API Mode: Receiving data from http://localhost:5000/gcs/all", 
+        html.P(id="mode-status", children="", 
                style={"color": "lime", "textAlign": "center", "fontSize": "14px", "margin": "10px"}),
-        html.P("Make sure the API server is running!", 
-               style={"color": "yellow", "textAlign": "center", "fontSize": "12px", "margin": "5px"}),
         html.P(id="board-count-display", children="Loading board configuration...",
                style={"color": "cyan", "textAlign": "center", "fontSize": "12px", "margin": "5px"}),
     ]),
@@ -408,13 +360,13 @@ app.layout = html.Div([
             html.Label("Select board to view"),
             dcc.Dropdown(
                 id="board-select",
-                options=[],  # Will be populated dynamically
+                options=[],
                 value="0",
                 clearable=False,
                 style={"width": "200px"}
             )
-        ], style={"padding" : "20px", "flex": "1"}),
-        
+        ], style={"padding": "20px", "flex": "1"}),
+
         html.Div([
             html.Label("Select BME Metric:"),
             dcc.Dropdown(
@@ -427,9 +379,8 @@ app.layout = html.Div([
                 value="Tempurature", clearable=False,
                 style={"width": "200px"}
             ),
-        ], style={"padding" : "20px", "flex": "1"}),
-        
-        # Apogee Prediction Input with memory
+        ], style={"padding": "20px", "flex": "1"}),
+
         html.Div([
             html.Label("Predicted Apogee (m):", style={"color": "white"}),
             dcc.Input(
@@ -442,7 +393,7 @@ app.layout = html.Div([
             html.Label("Board for prediction:", style={"marginTop": "10px"}),
             dcc.Dropdown(
                 id="prediction-board-select",
-                options=[],  # Will be populated dynamically
+                options=[],
                 value="0",
                 clearable=False,
                 style={"width": "150px"}
@@ -454,7 +405,7 @@ app.layout = html.Div([
         ], style={"padding": "20px", "flex": "1"}),
     ], style={"display": "flex", "gap": "20px"}),
 
-    # Status Board with phase display and deploy status
+    # Status Board
     html.Div([
         html.H2("Flight Status Board", style={"textAlign": "center"}),
         dash_table.DataTable(
@@ -469,7 +420,7 @@ app.layout = html.Div([
                 {"name": "Predicted", "id": "predicted"},
                 {"name": "Difference", "id": "apogee_diff"},
                 {"name": "Distance (m)", "id": "distance"},
-                {"name": "Score (20)", "id": "score"},
+                {"name": "Score (22.5)", "id": "score"},
             ],
             style_table={"overflowX": "auto"},
             style_header={
@@ -530,13 +481,11 @@ app.layout = html.Div([
         dcc.Graph(id="altitude-chart", figure=fig_alt, style={"height": "350px", "flex": "1"}),
     ], className="card", style={"display": "flex", "gap": "20px", "marginBottom": "20px"}),
 
-    # Hidden div to store prediction memory
     html.Div(id="prediction-memory-store", style={"display": "none"}),
     
     dcc.Interval(id="interval", interval=DASHBOARD_UPDATE_INTERVAL, n_intervals=0)
 ])
 
-# Callback to save predictions
 @app.callback(
     Output("prediction-status", "children"),
     Output("prediction-memory-store", "children"),
@@ -554,17 +503,23 @@ def save_prediction(n_clicks, predicted_apogee, board_id):
         return status_msg, str(prediction_memory)
     return "", str(prediction_memory)
 
-# Callback to update dropdown options dynamically
 @app.callback(
     Output("board-select", "options"),
     Output("prediction-board-select", "options"),
     Output("board-count-display", "children"),
+    Output("mode-status", "children"),
     Input("interval", "n_intervals")
 )
 def update_board_options(n):
     options = generate_board_options()
     count_msg = f"System: {num_boards} boards configured and active"
-    return options, options, count_msg
+    
+    if MODE == "serial":
+        mode_msg = f"📡 Serial Mode: Reading from {PORT} @ {BAUDRATE} baud"
+    else:
+        mode_msg = f"📡 API Mode: Receiving data from {API_ADDRESS}/gcs/all"
+    
+    return options, options, count_msg, mode_msg
 
 @app.callback(
     Output("2d-bmestats", "figure"),
@@ -579,13 +534,12 @@ def update_board_options(n):
     Input("predicted-apogee-input", "value"),
     Input("prediction-board-select", "value")
 )
-
 def update_charts(n, selected_board, selected_metric, predicted_apogee, prediction_board):
     if selected_board not in board_list or len(board_list[selected_board]["x"]) == 0:
         return go.Figure(), go.Figure(), go.Figure(), go.Figure(), go.Figure(), []
     board_data = board_list[selected_board]
 
-    # Status Board Data with phase system and deploy status
+    # Status Board Data
     status_rows = []
     for bid, bdata in board_list.items():
         if not bdata["alt"] or not bdata["phase"]:
@@ -595,15 +549,12 @@ def update_charts(n, selected_board, selected_metric, predicted_apogee, predicti
         max_alt = max(bdata["alt"])
         current_phase = bdata["phase"][-1]
         
-        # Deploy status
         main_deploy_status = "✅ DEPLOYED" if bdata["main_deploy"] else "⏳ Waiting"
         second_deploy_status = "✅ DEPLOYED" if bdata["second_deploy"] else "⏳ Waiting"
         
-        # Get stored prediction for this board
         stored_prediction = prediction_memory.get(bid, None)
         predicted_display = f"{stored_prediction}m" if stored_prediction else "Not set"
         
-        # Calculate prediction difference
         apogee_diff = "N/A"
         if stored_prediction:
             try:
@@ -617,45 +568,42 @@ def update_charts(n, selected_board, selected_metric, predicted_apogee, predicti
                     apogee_diff = f"{apogee_diff} ↓"
             except:
                 apogee_diff = "Error"
-        # --- Distance calculation ---
+        
         distance_m = "N/A"
         if bdata["lat"] and bdata["lon"]:
-            lat0, lon0 = bdata["lat"][0], bdata["lon"][0]  # launch
-            lat_end, lon_end = bdata["lat"][-1], bdata["lon"][-1]  # landing
+            lat0, lon0 = bdata["lat"][0], bdata["lon"][0]
+            lat_end, lon_end = bdata["lat"][-1], bdata["lon"][-1]
             dx, dy = latlon_to_xy(lat0, lon0, lat_end, lon_end)
             dist_val = math.sqrt(dx**2 + dy**2)
             distance_m = f"{dist_val:.1f}"
 
-        # --- Scoring system ---
         apogee_score = 0
         distance_score = 0
 
-        # Apogee score based on % error ranges
+        # Apogee Accuracy Score (15% weight, but displaying as 15 points max)
         if stored_prediction:
             try:
-                error_pct = abs(max_alt - float(stored_prediction)) / float(stored_prediction) * 100
-                if error_pct < 2: apogee_score = 10
-                elif error_pct < 5: apogee_score = 9
-                elif error_pct < 10: apogee_score = 8
-                elif error_pct < 15: apogee_score = 7
-                elif error_pct < 20: apogee_score = 6
-                elif error_pct < 25: apogee_score = 5
-                elif error_pct < 30: apogee_score = 4
-                elif error_pct < 40: apogee_score = 3
-                elif error_pct < 50: apogee_score = 2
-                else: apogee_score = 1
+                apogee_actual = max_alt
+                apogee_sim = float(stored_prediction)
+                ratio = (apogee_actual - apogee_sim) / apogee_sim
+                index_score_pct = 100 * (1 / (1 + (ratio ** 2)))
+                apogee_score = (index_score_pct / 100) * 15  # Convert to 15 points
             except:
-                pass
+                apogee_score = 0
 
-        # Distance score: max apogee/2 is cutoff, linear scale
+        # Landing Distance Score (7.5% weight, but displaying as 7.5 points max)
         if isinstance(distance_m, str) and distance_m != "N/A":
             try:
                 dist_val = float(distance_m)
-                max_dist = max_alt / 2 if max_alt > 0 else 1
-                score_ratio = max(0, 1 - dist_val / max_dist)  # closer → higher
-                distance_score = round(score_ratio * 10, 1)
+                # Score = (1 - Distance_landing / 500) × 100
+                # Then convert to 7.5 points scale
+                if dist_val <= 500:
+                    distance_score_pct = (1 - (dist_val / 500)) * 100
+                    distance_score = (distance_score_pct / 100) * 7.5  # Convert to 7.5 points
+                else:
+                    distance_score = 0  # Beyond 500m = 0 points
             except:
-                pass
+                distance_score = 0
 
         total_score = apogee_score + distance_score
         board_name = board_names.get(bid, f"Board {bid}")
@@ -669,7 +617,7 @@ def update_charts(n, selected_board, selected_metric, predicted_apogee, predicti
             "predicted": predicted_display,
             "apogee_diff": apogee_diff,
             "distance": distance_m,
-            "score": f"{apogee_score:.1f} + {distance_score:.1f} = {total_score:.1f}"
+            "score": f"{apogee_score:.2f} + {distance_score:.2f} = {total_score:.2f}/22.5"
         })
 
     # BME Chart
@@ -718,7 +666,7 @@ def update_charts(n, selected_board, selected_metric, predicted_apogee, predicti
         plot_bgcolor="#102c55", paper_bgcolor="#102c55", font=dict(color="white")
     )
 
-    # Altitude Chart with all saved prediction lines
+    # Altitude Chart
     fig_alt = go.Figure()
     fig_alt.add_trace(go.Scatter(
         y=board_data["alt"],
@@ -728,11 +676,9 @@ def update_charts(n, selected_board, selected_metric, predicted_apogee, predicti
         line=dict(color="cyan", width=3)
     ))
     
-    # Add prediction line for the selected board if it has a saved prediction
     stored_prediction = prediction_memory.get(selected_board, None)
     if stored_prediction:
         try:
-            max_time = max(board_data["time"]) if board_data["time"] else 100
             fig_alt.add_hline(
                 y=float(stored_prediction), 
                 line_dash="dash", 
@@ -743,7 +689,6 @@ def update_charts(n, selected_board, selected_metric, predicted_apogee, predicti
         except:
             pass
     
-    # Add current input prediction line if different from stored
     if predicted_apogee and prediction_board == selected_board:
         if not stored_prediction or float(predicted_apogee) != stored_prediction:
             try:
@@ -797,7 +742,7 @@ def update_charts(n, selected_board, selected_metric, predicted_apogee, predicti
         font=dict(color="white")
     )
 
-    # Globe View - show all boards
+    # Globe View
     figgeo = go.Figure()
     for bid, bdata in board_list.items():
         if len(bdata["lat"]) > 1 and bid != selected_board:
@@ -842,14 +787,18 @@ def update_charts(n, selected_board, selected_metric, predicted_apogee, predicti
     return fig2d, fig_accel, fig_alt, fig3d, figgeo, status_rows
 
 if __name__ == "__main__":
-    print("Starting Groundboard Dashboard...")
+    print("="*60)
+    print("Starting Ground Control Dashboard...")
+    print("="*60)
+    print(f"Mode: {MODE.upper()}")
     if MODE == "api":
-        print(f"Dashboard will connect to API server at: {API_ADDRESS}/gcs/all")
+        print(f"API Endpoint: {API_ADDRESS}/gcs/all")
     else:
-        print(f"Dashboard will read from SERIAL port {PORT} at {BAUDRATE} baud")
+        print(f"Serial Port: {PORT}")
+        print(f"Baud Rate: {BAUDRATE}")
+    print(f"Dashboard URL: http://{DASH_HOST}:{DASH_PORT}")
+    print("="*60)
 
     threading.Thread(target=data_fetcher_all, kwargs={"mode": MODE}, daemon=True).start()
 
-    print(f"Dashboard available at: http://{DASH_HOST}:{DASH_PORT}")
-    print("="*60)
-    app.run(debug=True, port=DASH_PORT,use_reloader=False)
+    app.run(debug=True, host=DASH_HOST, port=DASH_PORT, use_reloader=False)
