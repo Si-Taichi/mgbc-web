@@ -8,7 +8,8 @@ Configuration file / Modify these values to customize the system behavior
 
 # Number of rocket boards to simulate
 # You can change this to any number (tested up to 10)
-NUM_BOARDS = 6
+NUM_BOARDS = 3
+
 
 # Board names (optional, will use "Board 0", "Board 1", etc. if not specified)
 BOARD_NAMES = {
@@ -17,7 +18,11 @@ BOARD_NAMES = {
     2: "Rocket Charlie",
     3: "Rocket Delta",
     4: "Rocket Echo",
-    5: "Rocket Foxtrot"
+    5: "Rocket Foxtrot",
+    6: "Rocket Golf",
+    7: "Rocket Hotel",
+    8: "Rocket India",
+    9: "Rocket Juliet",
 }
 
 #Mode Configuration
