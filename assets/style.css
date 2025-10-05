@@ -5,13 +5,73 @@ body {
     padding: 0;
     color: #e6edf3;
 }
+
 h1, h2, h3 {
     font-weight: 600;
     margin-bottom: 10px;
 }
+
 .card {
     background-color: #161b22;
     border-radius: 12px;
     padding: 15px;
     box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+}
+
+/* Dropdown menu styling */
+.Select-menu-outer {
+    background-color: #1F2937 !important;
+    border: 1px solid #374151 !important;
+}
+
+.Select-option {
+    background-color: #1F2937 !important;
+    color: white !important;
+    padding: 10px !important;
+}
+
+.Select-option:hover {
+    background-color: #374151 !important;
+    color: white !important;
+}
+
+.Select-option.is-selected {
+    background-color: #3B82F6 !important;
+    color: white !important;
+}
+
+/* Fix dropdown selected value text color */
+.Select-value-label {
+    color: white !important;
+}
+
+/* Fix dropdown control (the main box) */
+.Select-control {
+    background-color: #1F2937 !important;
+    border: 1px solid #374151 !important;
+}
+
+.Select-value {
+    color: white !important;
+}
+
+.Select-placeholder {
+    color: #9CA3AF !important;
+}
+
+.Select-input {
+    color: white !important;
+}
+
+.Select-input > input {
+    color: white !important;
+}
+
+/* Make sure arrow icon is visible */
+.Select-arrow-zone {
+    color: white !important;
+}
+
+.Select-arrow {
+    border-color: white transparent transparent !important;
 }
