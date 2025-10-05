@@ -1,20 +1,22 @@
 from dash import Dash, dcc, html, Input, Output
-import plotly.graph_objects as go
 import requests
 import threading
 import time
-from config import API_ADDRESS, DASH_HOST, DASH_PORT, BOARD_NAMES, NUM_BOARDS
+import serial
+import traceback
+from config import API_ADDRESS, DASH_HOST, DASH_PORT, BOARD_NAMES, NUM_BOARDS, MODE, PORT, BAUDRATE
 
 app = Dash(__name__, update_title=None, title='Deployment Status Monitor')
 
-# Global data storage
 board_statuses = {}
-deployment_history = {}  # Track deployment events persistently
+deployment_history = {}
 api_status = "connecting"
 last_update = None
+num_boards = NUM_BOARDS
+board_names = BOARD_NAMES
 
 def parse_csv_string(csv_string):
-    """Parse CSV string from API"""
+    """Parse CSV string from API or Serial"""
     try:
         parts = csv_string.strip().split(",")
         
@@ -40,9 +42,12 @@ def parse_csv_string(csv_string):
         print(f"Parse error: {e}")
         return None
 
-def fetch_deployment_status():
+def fetch_deployment_status_api():
     """Fetch data from API and update board statuses"""
-    global board_statuses, api_status, last_update, deployment_history
+    global board_statuses, api_status, last_update, deployment_history, num_boards, board_names
+    
+    print("📡 Data fetcher running in API mode...")
+    print(f"   Endpoint: {API_ADDRESS}/gcs/all")
     
     while True:
         try:
@@ -51,28 +56,28 @@ def fetch_deployment_status():
                 data = response.json()
                 new_statuses = {}
                 
+                # Update num_boards based on received data
+                num_boards = len(data)
+                
                 for board_id, csv_string in data.items():
                     parsed_data = parse_csv_string(csv_string)
                     if parsed_data:
                         phase = parsed_data["phase"]
                         
-                        # Initialize deployment history for this board if not exists
                         if board_id not in deployment_history:
                             deployment_history[board_id] = {
                                 "main_deployed": False,
                                 "second_deployed": False
                             }
                         
-                        # Check if deployments occurred and persist them
                         if "MAIN" in phase and "DEPLOY" in phase:
                             deployment_history[board_id]["main_deployed"] = True
                         
                         if "SECOND" in phase and "DEPLOY" in phase:
                             deployment_history[board_id]["second_deployed"] = True
                         
-                        # Use persistent deployment status from history
                         new_statuses[board_id] = {
-                            "name": BOARD_NAMES.get(int(board_id), f"Board {board_id}"),
+                            "name": board_names.get(int(board_id), f"Board {board_id}"),
                             "phase": phase,
                             "main_deployed": deployment_history[board_id]["main_deployed"],
                             "second_deployed": deployment_history[board_id]["second_deployed"],
@@ -93,6 +98,128 @@ def fetch_deployment_status():
         
         time.sleep(1)
 
+def fetch_deployment_status_serial():
+    """Fetch data from Serial port and update board statuses"""
+    global board_statuses, api_status, last_update, deployment_history, num_boards, board_names
+    
+    num_boards = 1
+    board_names = {0: "Serial Board"}
+    
+    print(f"📡 Attempting to connect to serial port {PORT} at {BAUDRATE} baud...")
+    
+    ser = None
+    try:
+        ser = serial.Serial(PORT, BAUDRATE, timeout=1)
+        print(f"✅ Connected to serial port {PORT}")
+    except serial.SerialException as e:
+        print(f"❌ Could not open serial port {PORT}: {e}")
+        return
+    except Exception as e:
+        print(f"❌ Unexpected error opening serial port: {e}")
+        return
+
+    print("📡 Serial data fetcher running...")
+    
+    line_count = 0
+    error_count = 0
+    
+    while True:
+        try:
+            if not ser.is_open:
+                print("⚠️ Serial port closed, attempting to reconnect...")
+                try:
+                    ser.open()
+                    print("✅ Reconnected to serial port")
+                except:
+                    time.sleep(5)
+                    continue
+            
+            line = ser.readline().decode("utf-8", errors='ignore').strip()
+            
+            if not line:
+                continue
+            
+            line_count += 1
+            
+            if line_count <= 3:
+                print(f"📥 Received line {line_count}: {line}")
+            
+            parsed_data = parse_csv_string(line)
+            if not parsed_data:
+                error_count += 1
+                if error_count <= 5:
+                    print(f"⚠️ Skipping invalid line {line_count}")
+                continue
+
+            error_count = 0
+            
+            board_id = "0"
+            phase = parsed_data["phase"]
+            
+            if board_id not in deployment_history:
+                deployment_history[board_id] = {
+                    "main_deployed": False,
+                    "second_deployed": False
+                }
+            
+            if "MAIN" in phase and "DEPLOY" in phase:
+                deployment_history[board_id]["main_deployed"] = True
+                print(f"🪂 Main parachute deployed!")
+            
+            if "SECOND" in phase and "DEPLOY" in phase:
+                deployment_history[board_id]["second_deployed"] = True
+                print(f"🪂 Secondary parachute deployed!")
+            
+            board_statuses = {
+                board_id: {
+                    "name": board_names[int(board_id)],
+                    "phase": phase,
+                    "main_deployed": deployment_history[board_id]["main_deployed"],
+                    "second_deployed": deployment_history[board_id]["second_deployed"],
+                    "altitude": parsed_data["alt"],
+                    "last_seen": time.time()
+                }
+            }
+            
+            api_status = "connected"
+            last_update = time.strftime("%H:%M:%S")
+            
+            if line_count % 10 == 0:
+                print(f"📊 Received {line_count} valid data points (Alt: {parsed_data['alt']:.1f}m, Phase: {phase})")
+
+        except serial.SerialException as e:
+            print(f"❌ Serial connection error: {e}")
+            try:
+                ser.close()
+            except:
+                pass
+            time.sleep(5)
+            try:
+                ser = serial.Serial(PORT, BAUDRATE, timeout=1)
+                print("✅ Reconnected to serial port")
+            except Exception as reconnect_error:
+                print(f"❌ Reconnection failed: {reconnect_error}")
+                
+        except UnicodeDecodeError as e:
+            error_count += 1
+            if error_count <= 3:
+                print(f"⚠️ Unicode decode error: {e}")
+            continue
+            
+        except Exception as e:
+            print(f"❌ Serial fetcher error: {repr(e)}")
+            traceback.print_exc()
+            time.sleep(1)
+
+def fetch_deployment_status():
+    """Main fetcher that routes to appropriate mode"""
+    if MODE == "serial":
+        fetch_deployment_status_serial()
+    elif MODE == "api":
+        fetch_deployment_status_api()
+    else:
+        print(f"⚠️ Unknown mode: {MODE}")
+
 def get_phase_color(phase):
     """Get color based on flight phase"""
     if phase == "GROUND":
@@ -107,9 +234,16 @@ def get_phase_color(phase):
         return "#10B981"
     return "#6B7280"
 
+def generate_board_options():
+    """Generate dropdown options for board selection"""
+    options = []
+    for board_id in board_statuses.keys():
+        name = board_statuses[board_id]["name"]
+        options.append({"label": name, "value": board_id})
+    return options
+
 # App Layout
 app.layout = html.Div([
-    # Header
     html.Div([
         html.Div([
             html.Div([
@@ -125,7 +259,7 @@ app.layout = html.Div([
                         "color": "#9CA3AF",
                         "margin": "5px 0 0 0"
                     })
-                ], style={"marginLeft": "20px"})
+                ])
             ], style={
                 "display": "flex",
                 "alignItems": "center"
@@ -138,7 +272,7 @@ app.layout = html.Div([
                         "borderRadius": "50%",
                         "backgroundColor": "#10B981"
                     }),
-                    html.Span(id="api-status-text", children="API Connected", style={
+                    html.Span(id="api-status-text", children="Connecting...", style={
                         "fontSize": "14px",
                         "color": "#D1D5DB",
                         "marginLeft": "8px"
@@ -169,15 +303,40 @@ app.layout = html.Div([
         "border": "1px solid #374151"
     }),
     
-    # Status Cards Container
-    html.Div(id="status-cards-container", children=[]),
+    html.Div([
+        html.Label("Select Board:", style={
+            "color": "white",
+            "fontSize": "18px",
+            "fontWeight": "600",
+            "marginBottom": "10px",
+            "display": "block"
+        }),
+        dcc.Dropdown(
+            id="board-selector",
+            options=[],
+            value=None,
+            placeholder="Select a board to view...",
+            clearable=False,
+            style={
+                "width": "100%",
+                "maxWidth": "400px"
+            }
+        )
+    ], style={
+        "backgroundColor": "#1F2937",
+        "padding": "20px 30px",
+        "borderRadius": "12px",
+        "marginBottom": "30px",
+        "border": "1px solid #374151"
+    }),
     
-    # Footer Info
+    html.Div(id="status-card-container", children=[]),
+    
     html.Div([
         html.Div([
             html.P([
-                html.Span("API Endpoint: ", style={"fontWeight": "600", "color": "white"}),
-                html.Span(f"{API_ADDRESS}/gcs/all", style={"color": "#9CA3AF"})
+                html.Span("Data Source: ", style={"fontWeight": "600", "color": "white"}),
+                html.Span(id="data-source-text", children="", style={"color": "#9CA3AF"})
             ], style={"margin": "0", "fontSize": "14px"}),
             html.P([
                 html.Span("Active Boards: ", style={"fontWeight": "600", "color": "white"}),
@@ -195,31 +354,58 @@ app.layout = html.Div([
         "border": "1px solid #374151"
     }),
     
-    # Update interval
     dcc.Interval(id="interval-component", interval=1000, n_intervals=0)
     
 ], style={
     "minHeight": "100vh",
     "background": "linear-gradient(to bottom right, #111827, #1E3A8A, #111827)",
-    "padding": "40px"
+    "padding": "40px",
+    "maxWidth": "1200px",
+    "margin": "0 auto"
 })
 
 @app.callback(
-    Output("status-cards-container", "children"),
+    Output("board-selector", "options"),
+    Output("board-selector", "value"),
+    Output("data-source-text", "children"),
+    Input("interval-component", "n_intervals"),
+    Input("board-selector", "value")
+)
+def update_board_options(n, current_value):
+    options = generate_board_options()
+    
+    if MODE == "serial":
+        source_text = f"Serial Port {PORT} @ {BAUDRATE} baud"
+    else:
+        source_text = f"{API_ADDRESS}/gcs/all"
+    
+    if current_value is None and options:
+        return options, options[0]["value"], source_text
+    
+    if current_value in [opt["value"] for opt in options]:
+        return options, current_value, source_text
+    
+    if options:
+        return options, options[0]["value"], source_text
+    
+    return options, None, source_text
+
+@app.callback(
+    Output("status-card-container", "children"),
     Output("api-status-indicator", "style"),
     Output("api-status-text", "children"),
     Output("last-update-text", "children"),
     Output("active-boards-count", "children"),
-    Input("interval-component", "n_intervals")
+    Input("interval-component", "n_intervals"),
+    Input("board-selector", "value")
 )
-def update_dashboard(n):
-    # Update API status
+def update_dashboard(n, selected_board):
     if api_status == "connected":
         status_color = "#10B981"
-        status_text = "API Connected"
+        status_text = "Serial Connected" if MODE == "serial" else "API Connected"
     else:
         status_color = "#EF4444"
-        status_text = "API Disconnected"
+        status_text = "Serial Disconnected" if MODE == "serial" else "API Disconnected"
     
     status_indicator_style = {
         "width": "12px",
@@ -228,16 +414,12 @@ def update_dashboard(n):
         "backgroundColor": status_color
     }
     
-    # Update last update time
     update_text = f"Last update: {last_update}" if last_update else "Last update: --:--:--"
-    
-    # Active boards count
     active_count = str(len(board_statuses))
     
-    # Create status cards
     if not board_statuses:
         if api_status == "connected":
-            cards = html.Div([
+            card = html.Div([
                 html.Div("⚠️", style={"fontSize": "64px", "marginBottom": "20px"}),
                 html.H3("No Boards Detected", style={
                     "fontSize": "24px",
@@ -254,7 +436,14 @@ def update_dashboard(n):
                 "color": "white"
             })
         else:
-            cards = html.Div([
+            if MODE == "serial":
+                error_msg = f"Cannot connect to serial port {PORT}"
+                hint_msg = "Make sure the device is connected"
+            else:
+                error_msg = f"Cannot connect to API server at {API_ADDRESS}"
+                hint_msg = "Make sure the API server is running"
+                
+            card = html.Div([
                 html.Div("❌", style={"fontSize": "64px", "marginBottom": "20px"}),
                 html.H3("Connection Error", style={
                     "fontSize": "24px",
@@ -262,11 +451,11 @@ def update_dashboard(n):
                     "color": "white",
                     "marginBottom": "10px"
                 }),
-                html.P(f"Cannot connect to API server at {API_ADDRESS}", style={
+                html.P(error_msg, style={
                     "color": "#9CA3AF",
                     "marginBottom": "5px"
                 }),
-                html.P("Make sure the API server is running", style={
+                html.P(hint_msg, style={
                     "fontSize": "12px",
                     "color": "#6B7280"
                 })
@@ -275,38 +464,47 @@ def update_dashboard(n):
                 "padding": "80px 20px",
                 "color": "white"
             })
-    else:
-        cards = html.Div([
-            create_status_card(board_id, status)
-            for board_id, status in board_statuses.items()
+    elif selected_board is None:
+        card = html.Div([
+            html.Div("👆", style={"fontSize": "64px", "marginBottom": "20px"}),
+            html.H3("Select a Board", style={
+                "fontSize": "24px",
+                "fontWeight": "bold",
+                "color": "white",
+                "marginBottom": "10px"
+            }),
         ], style={
-            "display": "grid",
-            "gridTemplateColumns": "repeat(auto-fit, minmax(350px, 1fr))",
-            "gap": "24px"
+            "textAlign": "center",
+            "padding": "80px 20px",
+            "color": "white"
         })
+    elif selected_board in board_statuses:
+        card = create_status_card(selected_board, board_statuses[selected_board])
+    else:
+        card = html.Div([
+            html.P("Board not found", style={"color": "white", "textAlign": "center"})
+        ])
     
-    return cards, status_indicator_style, status_text, update_text, active_count
+    return card, status_indicator_style, status_text, update_text, active_count
 
 def create_status_card(board_id, status):
-    """Create a status card for a board"""
     phase_color = get_phase_color(status["phase"])
     
     return html.Div([
-        # Card Header
         html.Div([
             html.Div([
                 html.H2(status["name"], style={
-                    "fontSize": "20px",
+                    "fontSize": "32px",
                     "fontWeight": "bold",
                     "color": "white",
                     "margin": "0"
                 }),
                 html.Span(status["phase"], style={
-                    "fontSize": "12px",
+                    "fontSize": "18px",
                     "fontWeight": "600",
                     "color": "white",
                     "backgroundColor": "rgba(0,0,0,0.3)",
-                    "padding": "4px 12px",
+                    "padding": "8px 20px",
                     "borderRadius": "12px"
                 })
             ], style={
@@ -316,17 +514,15 @@ def create_status_card(board_id, status):
             })
         ], style={
             "backgroundColor": phase_color,
-            "padding": "20px 24px"
+            "padding": "30px 40px"
         }),
         
-        # Card Body
         html.Div([
-            # Main Parachute
             html.Div([
                 html.Div([
                     html.Div([
                         html.Span("✓" if status["main_deployed"] else "⏳", style={
-                            "fontSize": "28px",
+                            "fontSize": "64px",
                             "color": "#4ADE80" if status["main_deployed"] else "#FBBF24"
                         }),
                         html.Div([
@@ -334,23 +530,23 @@ def create_status_card(board_id, status):
                                 "color": "white",
                                 "fontWeight": "700",
                                 "margin": "0",
-                                "fontSize": "24px"
+                                "fontSize": "36px"
                             }),
-                            html.P("Primary deployment", style={
+                            html.P("Primary deployment system", style={
                                 "color": "#9CA3AF",
-                                "margin": "0",
-                                "fontSize": "16px"
+                                "margin": "5px 0 0 0",
+                                "fontSize": "18px"
                             })
-                        ], style={"marginLeft": "20px"})
+                        ], style={"marginLeft": "30px"})
                     ], style={"display": "flex", "alignItems": "center"}),
                     html.Span(
                         "DEPLOYED" if status["main_deployed"] else "STANDBY",
                         style={
-                            "fontSize": "16px",
+                            "fontSize": "20px",
                             "fontWeight": "700",
                             "color": "white",
                             "backgroundColor": "#16A34A" if status["main_deployed"] else "#CA8A04",
-                            "padding": "8px 20px",
+                            "padding": "12px 30px",
                             "borderRadius": "12px"
                         }
                     )
@@ -361,18 +557,17 @@ def create_status_card(board_id, status):
                 })
             ], style={
                 "backgroundColor": "#111827",
-                "padding": "24px",
-                "borderRadius": "8px",
-                "border": "1px solid #374151",
-                "marginBottom": "16px"
+                "padding": "40px",
+                "borderRadius": "12px",
+                "border": "2px solid #374151",
+                "marginBottom": "24px"
             }),
             
-            # Secondary Parachute
             html.Div([
                 html.Div([
                     html.Div([
                         html.Span("✓" if status["second_deployed"] else "⏳", style={
-                            "fontSize": "28px",
+                            "fontSize": "64px",
                             "color": "#4ADE80" if status["second_deployed"] else "#FBBF24"
                         }),
                         html.Div([
@@ -380,23 +575,23 @@ def create_status_card(board_id, status):
                                 "color": "white",
                                 "fontWeight": "700",
                                 "margin": "0",
-                                "fontSize": "24px"
+                                "fontSize": "36px"
                             }),
-                            html.P("Secondary deployment", style={
+                            html.P("Secondary deployment system", style={
                                 "color": "#9CA3AF",
-                                "margin": "0",
-                                "fontSize": "16px"
+                                "margin": "5px 0 0 0",
+                                "fontSize": "18px"
                             })
-                        ], style={"marginLeft": "20px"})
+                        ], style={"marginLeft": "30px"})
                     ], style={"display": "flex", "alignItems": "center"}),
                     html.Span(
                         "DEPLOYED" if status["second_deployed"] else "STANDBY",
                         style={
-                            "fontSize": "16px",
+                            "fontSize": "20px",
                             "fontWeight": "700",
                             "color": "white",
                             "backgroundColor": "#16A34A" if status["second_deployed"] else "#CA8A04",
-                            "padding": "8px 20px",
+                            "padding": "12px 30px",
                             "borderRadius": "12px"
                         }
                     )
@@ -407,11 +602,11 @@ def create_status_card(board_id, status):
                 })
             ], style={
                 "backgroundColor": "#111827",
-                "padding": "24px",
-                "borderRadius": "8px",
-                "border": "1px solid #374151"
+                "padding": "40px",
+                "borderRadius": "12px",
+                "border": "2px solid #374151"
             })
-        ], style={"padding": "24px"})
+        ], style={"padding": "40px"})
     ], style={
         "backgroundColor": "#1F2937",
         "borderRadius": "12px",
@@ -424,13 +619,17 @@ if __name__ == "__main__":
     print("="*60)
     print("Starting Deployment Status Dashboard...")
     print("="*60)
-    print(f"API Server: {API_ADDRESS}")
+    print(f"Mode: {MODE.upper()}")
+    if MODE == "serial":
+        print(f"Serial Port: {PORT}")
+        print(f"Baud Rate: {BAUDRATE}")
+    else:
+        print(f"API Endpoints:")
+        print(f"  - {API_ADDRESS}/gcs/all")
+        print(f"  - {API_ADDRESS}/gcs/<device_id>")
     print(f"Dashboard: http://{DASH_HOST}:{DASH_PORT}")
-    print(f"Configured Boards: {NUM_BOARDS}")
     print("="*60)
     
-    # Start data fetcher thread
     threading.Thread(target=fetch_deployment_status, daemon=True).start()
     
-    # Run the app
     app.run(debug=True, host=DASH_HOST, port=DASH_PORT, use_reloader=False)
