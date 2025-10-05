@@ -367,7 +367,7 @@ app.layout = html.Div([
                 options=[],
                 value="0",
                 clearable=False,
-                style={"width": "200px", "color": "black"}
+                style={"width": "200px"}
             )
         ], style={"padding": "20px", "flex": "1"}),
 
@@ -381,7 +381,7 @@ app.layout = html.Div([
                     {"label": "Humidity", "value": "Humidity"}
                 ],
                 value="Tempurature", clearable=False,
-                style={"width": "200px", "color": "black"}
+                style={"width": "200px"}
             ),
         ], style={"padding": "20px", "flex": "1"}),
 
@@ -400,7 +400,7 @@ app.layout = html.Div([
                 options=[],
                 value="0",
                 clearable=False,
-                style={"width": "150px", "color": "black"}
+                style={"width": "150px"}
             ),
             html.Button("Save Prediction", id="save-prediction-btn", 
                        style={"backgroundColor": "#4CAF50", "color": "white", "border": "none", 
@@ -806,3 +806,4 @@ if __name__ == "__main__":
     threading.Thread(target=data_fetcher_all, kwargs={"mode": MODE}, daemon=True).start()
 
     app.run(debug=True, host=DASH_HOST, port=DASH_PORT, use_reloader=False)
+
