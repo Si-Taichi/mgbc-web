@@ -8,7 +8,6 @@ import math
 import serial
 import websockets
 import json
-import ssl
 import asyncio
 from config import NUM_BOARDS, MODE, PORT, BAUDRATE, DASHBOARD_UPDATE_INTERVAL, API_ADDRESS, DASH_HOST, DASH_PORT, BOARD_NAMES, WSS_ADDRESS
 
@@ -223,18 +222,15 @@ def data_fetcher_websocket():
             try:
                 print(f"🔄 Connection attempt {retry_count + 1}/{max_retries}")
                 
-                ssl_context = ssl._create_unverified_context()
-                
                 async with websockets.connect(
                     ws_url,
-                    ping_interval=None,        # disable ping/pong timeout
-                    ping_timeout=None,         # ignore handshake timeout
-                    close_timeout=5,
+                    ping_interval=None,
+                    open_timeout=None,  # Disable handshake timeout
+                    close_timeout=None,
                     max_size=10_000_000,
-                    compression=None,
-                    ssl=ssl_context if ws_url.startswith("wss") else None,
-                    origin=None
+                    compression=None
                 ) as ws:
+
                     print("✅ WebSocket connected. Listening for data...")
                     retry_count = 0
                     
