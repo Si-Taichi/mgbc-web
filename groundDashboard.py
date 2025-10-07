@@ -208,11 +208,8 @@ def data_fetcher_websocket():
     WebSocket mode to receive real-time telemetry
     """
     global all_board, board_list, num_boards, board_names
-    
-    ws_url = API_ADDRESS
-    # if not ws_url.endswith("/gcs/all"):
-    #     ws_url = ws_url.rstrip("/") + "/gcs/all"
 
+    ws_url = API_ADDRESS
     print(f"🌐 Connecting to WebSocket at {ws_url}")
 
     def on_message(ws, message):
@@ -247,16 +244,20 @@ def data_fetcher_websocket():
         if not v:
             print(f"⚠️ Invalid CSV received from board {board_id}")
             return
-    
+
         # Print parsed data summary
-        print(
-            f"📥 Parsed data from board {board_id} → "
-            f"Alt={v['lc86g alt'][0]:.2f}m | "
-            f"Lat={v['lc86g lat'][0]:.5f} | "
-            f"Lon={v['lc86g lon'][0]:.5f} | "
-            f"Temp={v['bme tempurature'][0]:.2f}°C | "
-            f"Phase={v['phase'][0]}"
-        )
+        try:
+            print(
+                f"📥 Parsed data from board {board_id} → "
+                f"Alt={v['lc86g alt'][0]:.2f}m | "
+                f"Lat={v['lc86g lat'][0]:.5f} | "
+                f"Lon={v['lc86g lon'][0]:.5f} | "
+                f"Temp={v['bme tempurature'][0]:.2f}°C | "
+                f"Phase={v['phase'][0]}"
+            )
+        except Exception:
+            # Defensive: if any key missing, still continue to append
+            pass
 
         if board_id not in board_list:
             board_list[board_id] = init_board_data()
@@ -288,37 +289,35 @@ def data_fetcher_websocket():
         print(f"❌ WebSocket error: {error}")
 
     def on_close(ws, close_status_code, close_msg):
-        print("⚠️ WebSocket closed. Attempting reconnect in 5s...")
-        time.sleep(5)
-        data_fetcher_websocket()  # Auto-reconnect
+        print("⚠️ WebSocket closed. The run_ws() thread will attempt reconnects.")
 
     def on_open(ws):
         print("✅ WebSocket connected. Listening for data...")
 
-    # Persistent connection loop
     def run_ws():
-            while True:
-                try:
-                    ws = websocket.WebSocketApp(
-                        ws_url,
-                        on_message=on_message,
-                        on_error=on_error,
-                        on_close=on_close,
-                        on_open=on_open
-                    )
-                    # Add keepalive ping every 10 seconds to prevent timeouts
-                    ws.run_forever(ping_interval=10, ping_timeout=5)
-                except Exception as e:
-                    print(f"❌ WebSocket thread error: {e}")
-                print("⏳ Reconnecting to WebSocket in 5s...")
-                time.sleep(5)
-    
-        print("🚀 Launching WebSocket listener thread...")
-        threading.Thread(target=run_ws, daemon=True).start()
-    
-        # Keep this function alive so Flask doesn’t exit the thread
+        """Inner thread function that keeps the WebSocket alive and reconnects."""
         while True:
-            time.sleep(60)
+            try:
+                ws = websocket.WebSocketApp(
+                    ws_url,
+                    on_message=on_message,
+                    on_error=on_error,
+                    on_close=on_close,
+                    on_open=on_open
+                )
+                ws.run_forever(ping_interval=10, ping_timeout=5)
+            except Exception as e:
+                print(f"❌ WebSocket thread error: {e}")
+            print("⏳ Reconnecting to WebSocket in 5s...")
+            time.sleep(5)
+
+    # Start the WebSocket listener in a background daemon thread
+    print("🚀 Launching WebSocket listener thread...")
+    threading.Thread(target=run_ws, daemon=True).start()
+
+    # Keep this function alive so the thread keeps running
+    while True:
+        time.sleep(60)
 
 def data_fetcher_all(mode):
     """
@@ -928,6 +927,7 @@ if __name__ == "__main__":
     threading.Thread(target=data_fetcher_all, kwargs={"mode": MODE}, daemon=True).start()
 
     app.run(debug=True, host=DASH_HOST, port=DASH_PORT, use_reloader=False)
+
 
 
 
