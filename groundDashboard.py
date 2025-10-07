@@ -309,8 +309,8 @@ def data_fetcher_websocket():
                 return
                 
             except Exception as e:
-                print(f"❌ WebSocket connection error: {type(e).__name__}: {e}")
-                retry_count += 1
+                print(f"❌ WebSocket connection error: {e}")
+                await asyncio.sleep(3)
                 
             wait_time = min(5 * retry_count, 30)
             print(f"⏳ Reconnecting in {wait_time} seconds...")
