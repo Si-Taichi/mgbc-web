@@ -212,67 +212,67 @@ def data_fetcher_websocket():
     ws_url = API_ADDRESS
     print(f"🌐 Connecting to WebSocket at {ws_url}")
 
-def on_message(ws, message):
-    # This will still be called for text frames — but we'll log everything in on_data too
-    print("on_message() called. repr:")
-    print(repr(message))
-    try:
-        # if message is bytes (shouldn't be here), ensure string
-        if isinstance(message, (bytes, bytearray)):
-            text = message.decode("utf-8", errors="ignore")
-        else:
-            text = message
-        # keep existing handling: JSON vs CSV
-        if text.strip().startswith("{"):
-            try:
-                data = json.loads(text)
-            except Exception as e:
-                print("⚠️ JSON parse failed:", e)
-                return
-            if "data" in data:
-                board_id = str(data.get("id", "0"))
-                csv_string = data["data"]
-            else:
-                for board_id, csv_string in data.items():
-                    update_board_from_csv(board_id, csv_string)
-                return
-        else:
-            board_id = "0"
-            csv_string = text
-        update_board_from_csv(board_id, csv_string)
-    except Exception as e:
-        print("⚠️ on_message exception:", repr(e))
-        traceback.print_exc()
-
-def on_data(ws, message, message_type, fin):
-    # Called for all frame types — ensure both text & binary go to on_message
-    try:
-        if message_type == websocket.ABNF.OPCODE_BINARY:
-            print(f"on_data: BINARY frame (len={len(message)})")
-            try:
-                text = message.decode("utf-8", errors="ignore")
-                on_message(ws, text)
-            except Exception as e:
-                print("⚠️ Failed to decode binary:", e)
-        elif message_type == websocket.ABNF.OPCODE_TEXT:
-            # message here might already be str or bytes depending on client version — show repr
-            print(f"on_data: TEXT frame repr: {repr(message)}")
+    def on_message(ws, message):
+        # This will still be called for text frames — but we'll log everything in on_data too
+        print("on_message() called. repr:")
+        print(repr(message))
+        try:
+            # if message is bytes (shouldn't be here), ensure string
             if isinstance(message, (bytes, bytearray)):
-                on_message(ws, message.decode("utf-8", errors="ignore"))
+                text = message.decode("utf-8", errors="ignore")
             else:
-                on_message(ws, message)
-        else:
-            print(f"on_data: other opcode={message_type}, fin={fin}, repr={repr(message)}")
-    except Exception as e:
-        print("⚠️ on_data exception:", e)
-        traceback.print_exc()
-
-def on_ping(ws, message):
-    print("<< PING from server:", repr(message))
-
-def on_pong(ws, message):
-    print("<< PONG from server:", repr(message))
-
+                text = message
+            # keep existing handling: JSON vs CSV
+            if text.strip().startswith("{"):
+                try:
+                    data = json.loads(text)
+                except Exception as e:
+                    print("⚠️ JSON parse failed:", e)
+                    return
+                if "data" in data:
+                    board_id = str(data.get("id", "0"))
+                    csv_string = data["data"]
+                else:
+                    for board_id, csv_string in data.items():
+                        update_board_from_csv(board_id, csv_string)
+                    return
+            else:
+                board_id = "0"
+                csv_string = text
+            update_board_from_csv(board_id, csv_string)
+        except Exception as e:
+            print("⚠️ on_message exception:", repr(e))
+            traceback.print_exc()
+    
+    def on_data(ws, message, message_type, fin):
+        # Called for all frame types — ensure both text & binary go to on_message
+        try:
+            if message_type == websocket.ABNF.OPCODE_BINARY:
+                print(f"on_data: BINARY frame (len={len(message)})")
+                try:
+                    text = message.decode("utf-8", errors="ignore")
+                    on_message(ws, text)
+                except Exception as e:
+                    print("⚠️ Failed to decode binary:", e)
+            elif message_type == websocket.ABNF.OPCODE_TEXT:
+                # message here might already be str or bytes depending on client version — show repr
+                print(f"on_data: TEXT frame repr: {repr(message)}")
+                if isinstance(message, (bytes, bytearray)):
+                    on_message(ws, message.decode("utf-8", errors="ignore"))
+                else:
+                    on_message(ws, message)
+            else:
+                print(f"on_data: other opcode={message_type}, fin={fin}, repr={repr(message)}")
+        except Exception as e:
+            print("⚠️ on_data exception:", e)
+            traceback.print_exc()
+    
+    def on_ping(ws, message):
+        print("<< PING from server:", repr(message))
+    
+    def on_pong(ws, message):
+        print("<< PONG from server:", repr(message))
+    
     def update_board_from_csv(board_id, csv_string):
         print(f"🔹 Raw message from board {board_id}: {csv_string}")
 
@@ -320,7 +320,7 @@ def on_pong(ws, message):
 
         board_list[board_id]["phase"].append(display_phase)
         board_list[board_id]["time"].append(elapsed_seconds())
-
+    
     def on_error(ws, error):
         print(f"❌ WebSocket error: {error}")
 
@@ -351,13 +351,13 @@ def on_pong(ws, message):
             print("⏳ Reconnecting to WebSocket in 5s...")
             time.sleep(5)
 
-    # Start the WebSocket listener in a background daemon thread
-    print("🚀 Launching WebSocket listener thread...")
-    threading.Thread(target=run_ws, daemon=True).start()
+# Start the WebSocket listener in a background daemon thread
+print("🚀 Launching WebSocket listener thread...")
+threading.Thread(target=run_ws, daemon=True).start()
 
-    # Keep this function alive so the thread keeps running
-    while True:
-        time.sleep(60)
+# Keep this function alive so the thread keeps running
+while True:
+    time.sleep(60)
 
 def data_fetcher_all(mode):
     """
@@ -967,6 +967,7 @@ if __name__ == "__main__":
     threading.Thread(target=data_fetcher_all, kwargs={"mode": MODE}, daemon=True).start()
 
     app.run(debug=True, host=DASH_HOST, port=DASH_PORT, use_reloader=False)
+
 
 
 
