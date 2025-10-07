@@ -9,7 +9,7 @@ import serial
 import websocket
 import json
 from config import NUM_BOARDS, MODE, PORT, BAUDRATE, DASHBOARD_UPDATE_INTERVAL, API_ADDRESS, DASH_HOST, DASH_PORT, BOARD_NAMES
-
+websocket.enableTrace(True)
 app = Dash(__name__, update_title=None, title='kits board UGCS')
 
 def init_board_data():
@@ -339,8 +339,12 @@ def on_pong(ws, message):
                     on_message=on_message,
                     on_error=on_error,
                     on_close=on_close,
-                    on_open=on_open
+                    on_open=on_open,
+                    on_data=on_data,
+                    on_ping=on_ping,
+                    on_pong=on_pong
                 )
+
                 ws.run_forever(ping_interval=10, ping_timeout=5)
             except Exception as e:
                 print(f"❌ WebSocket thread error: {e}")
@@ -963,6 +967,7 @@ if __name__ == "__main__":
     threading.Thread(target=data_fetcher_all, kwargs={"mode": MODE}, daemon=True).start()
 
     app.run(debug=True, host=DASH_HOST, port=DASH_PORT, use_reloader=False)
+
 
 
 
