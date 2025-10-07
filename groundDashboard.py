@@ -9,7 +9,7 @@ import serial
 import websockets
 import json
 import asyncio
-from config import NUM_BOARDS, MODE, PORT, BAUDRATE, DASHBOARD_UPDATE_INTERVAL, API_ADDRESS, DASH_HOST, DASH_PORT, BOARD_NAMES
+from config import NUM_BOARDS, MODE, PORT, BAUDRATE, DASHBOARD_UPDATE_INTERVAL, API_ADDRESS, DASH_HOST, DASH_PORT, BOARD_NAMES, WSS_ADDRESS
 
 app = Dash(__name__, update_title=None, title='kits board UGCS')
 
@@ -66,10 +66,10 @@ def parse_csv_string(csv_string):
             lon = float(parts[4].strip())
             temp = float(parts[5].strip())
             pressure = float(parts[6].strip())
-            humidity = float(parts[8].strip())
-            alt = float(parts[9].strip())
-            phase = parts[10].strip()
-            
+            humidity = float(parts[7].strip())
+            alt = float(parts[8].strip())
+            phase = parts[9].strip()
+
             return {
                 "LIS331DLH axis x": [x],
                 "LIS331DLH axis y": [y],
@@ -206,12 +206,13 @@ def data_fetcher_serial():
 
 def data_fetcher_websocket():
     """
-    Async WebSocket mode with better error handling and authentication
+    Async WebSocket mode - FIXED to handle multiple boards properly
     """
     global all_board, board_list, num_boards, board_names
 
-    ws_url = API_ADDRESS
+    ws_url = WSS_ADDRESS + "/gcs/all"
     print(f"🌐 Connecting to WebSocket at {ws_url}")
+    print(f"📊 Expecting data from {NUM_BOARDS} boards")
 
     async def ws_listener():
         retry_count = 0
@@ -227,34 +228,37 @@ def data_fetcher_websocket():
                     ping_timeout=10,
                     close_timeout=5,
                     max_size=10_000_000,
-                    compression=None,  # Disable compression
-                    origin=None  # Don't send Origin header
+                    compression=None,
+                    origin=None
                 ) as ws:
                     print("✅ WebSocket connected. Listening for data...")
-                    retry_count = 0  # Reset on successful connection
+                    retry_count = 0
+                    
+                    # FIXED: Track which board each message comes from
+                    message_count = 0
                     
                     async for message in ws:
-                        # Raw message logging
-                        print(f"📹 Raw message: {message.strip()}")
+                        message_count += 1
+                        
+                        # Parse the CSV
                         v = parse_csv_string(message)
                         if not v:
-                            print("⚠️ Invalid CSV received, skipping.")
+                            print(f"⚠️ Invalid CSV received (message #{message_count}), skipping.")
                             continue
 
-                        # Summary printout
-                        print(
-                            f"📥 Parsed → "
-                            f"Alt={v['lc86g alt'][0]:.2f}m | "
-                            f"Lat={v['lc86g lat'][0]:.5f} | "
-                            f"Lon={v['lc86g lon'][0]:.5f} | "
-                            f"Temp={v['bme tempurature'][0]:.2f}°C | "
-                            f"Phase={v['phase'][0]}"
-                        )
-
-                        board_id = "0"
+                        # CRITICAL FIX: Determine which board this data is from
+                        # Since wss_server.py sends data for all boards in rotation,
+                        # we need to track which board sent this message
+                        # The server publishes in order: board 0, 1, 2, ... n-1
+                        board_id = str(message_count % NUM_BOARDS)
+                        
+                        # Initialize board if needed
                         if board_id not in board_list:
                             board_list[board_id] = init_board_data()
+                            board_name = board_names.get(int(board_id), f"Board {board_id}")
+                            print(f"✅ Initialized data storage for {board_name}")
 
+                        # Store data for this specific board
                         board_list[board_id]["x"].append(v["LIS331DLH axis x"][0])
                         board_list[board_id]["y"].append(v["LIS331DLH axis y"][0])
                         board_list[board_id]["z"].append(v["LIS331DLH axis z"][0])
@@ -277,6 +281,16 @@ def data_fetcher_websocket():
 
                         board_list[board_id]["phase"].append(display_phase)
                         board_list[board_id]["time"].append(elapsed_seconds())
+                        
+                        # Log periodically for each board
+                        if message_count % (NUM_BOARDS * 10) == 0:
+                            board_name = board_names.get(int(board_id), f"Board {board_id}")
+                            print(
+                                f"📥 {board_name}: "
+                                f"Alt={v['lc86g alt'][0]:.2f}m | "
+                                f"Phase={display_phase} | "
+                                f"Total messages: {message_count}"
+                            )
 
             except websockets.exceptions.InvalidStatusCode as e:
                 print(f"❌ WebSocket connection rejected with status code: {e.status_code}")
@@ -286,24 +300,22 @@ def data_fetcher_websocket():
                     print("❌ Max retries reached. Please check:")
                     print("   1. Is the WebSocket server running?")
                     print("   2. Is the URL correct?")
-                    print("   3. Do you need authentication?")
-                    print("   4. Try switching to 'serial' or 'api' mode in config.py")
+                    print("   3. Try switching to 'api' mode in config.py")
                     return
                     
             except websockets.exceptions.InvalidURI as e:
                 print(f"❌ Invalid WebSocket URI: {e}")
-                print("   Check your API_ADDRESS in config.py")
+                print("   Check your WSS_ADDRESS in config.py")
                 return
                 
             except Exception as e:
                 print(f"❌ WebSocket connection error: {type(e).__name__}: {e}")
                 retry_count += 1
                 
-            wait_time = min(5 * retry_count, 30)  # Progressive backoff
+            wait_time = min(5 * retry_count, 30)
             print(f"⏳ Reconnecting in {wait_time} seconds...")
             await asyncio.sleep(wait_time)
 
-    # Run async listener in its own thread-safe loop
     def run_loop():
         asyncio.run(ws_listener())
 
@@ -335,13 +347,13 @@ def data_fetcher_all(mode):
                 if r.status_code == 200:
                     data = r.json()
                     
-                    # Update num_boards and board_names based on actual data received
+                    # Update num_boards based on actual data received
                     received_boards = len(data)
                     if received_boards != num_boards:
                         print(f"📊 Board count updated: {num_boards} → {received_boards}")
                         num_boards = received_boards
                     
-                    # Update board names for any boards we don't have names for
+                    # Update board names
                     for board_id in data.keys():
                         if board_id not in board_names:
                             board_names[board_id] = f"Board {board_id}"
@@ -350,7 +362,7 @@ def data_fetcher_all(mode):
                     time.sleep(2)
                     continue
 
-                # Process data
+                # Process data for each board
                 all_board = []
                 for board_id, csv_string in data.items():
                     v = parse_csv_string(csv_string)
@@ -635,6 +647,8 @@ def update_board_options(n):
     
     if MODE == "serial":
         mode_msg = f"📡 Serial Mode: Reading from {PORT} @ {BAUDRATE} baud"
+    elif MODE == "websocket":
+        mode_msg = f"📡 WebSocket Mode: Connected to {WSS_ADDRESS}"
     else:
         mode_msg = f"📡 API Mode: Receiving data from {API_ADDRESS}/gcs/all"
     
@@ -699,28 +713,24 @@ def update_charts(n, selected_board, selected_metric, predicted_apogee, predicti
         apogee_score = 0
         distance_score = 0
 
-        # Apogee Accuracy Score (15% weight, but displaying as 15 points max)
         if stored_prediction:
             try:
                 apogee_actual = max_alt
                 apogee_sim = float(stored_prediction)
                 ratio = (apogee_actual - apogee_sim) / apogee_sim
                 index_score_pct = 100 * (1 / (1 + (ratio ** 2)))
-                apogee_score = (index_score_pct / 100) * 15  # Convert to 15 points
+                apogee_score = (index_score_pct / 100) * 15
             except:
                 apogee_score = 0
 
-        # Landing Distance Score (7.5% weight, but displaying as 7.5 points max)
         if isinstance(distance_m, str) and distance_m != "N/A":
             try:
                 dist_val = float(distance_m)
-                # Score = (1 - Distance_landing / 500) × 100
-                # Then convert to 7.5 points scale
                 if dist_val <= 500:
                     distance_score_pct = (1 - (dist_val / 500)) * 100
-                    distance_score = (distance_score_pct / 100) * 7.5  # Convert to 7.5 points
+                    distance_score = (distance_score_pct / 100) * 7.5
                 else:
-                    distance_score = 0  # Beyond 500m = 0 points
+                    distance_score = 0
             except:
                 distance_score = 0
 
@@ -912,6 +922,8 @@ if __name__ == "__main__":
     print(f"Mode: {MODE.upper()}")
     if MODE == "api":
         print(f"API Endpoint: {API_ADDRESS}/gcs/all")
+    elif MODE == "websocket":
+        print(f"WebSocket Endpoint: {WSS_ADDRESS}/gcs/all")
     else:
         print(f"Serial Port: {PORT}")
         print(f"Baud Rate: {BAUDRATE}")
@@ -921,17 +933,3 @@ if __name__ == "__main__":
     threading.Thread(target=data_fetcher_all, kwargs={"mode": MODE}, daemon=True).start()
 
     app.run(debug=True, host=DASH_HOST, port=DASH_PORT, use_reloader=False)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
