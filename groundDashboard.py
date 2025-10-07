@@ -296,19 +296,29 @@ def data_fetcher_websocket():
         print("✅ WebSocket connected. Listening for data...")
 
     # Persistent connection loop
-    while True:
-        try:
-            ws = websocket.WebSocketApp(
-                ws_url,
-                on_message=on_message,
-                on_error=on_error,
-                on_close=on_close,
-                on_open=on_open
-            )
-            ws.run_forever()
-        except Exception as e:
-            print(f"❌ WebSocket connection error: {e}")
-            time.sleep(5)
+    def run_ws():
+            while True:
+                try:
+                    ws = websocket.WebSocketApp(
+                        ws_url,
+                        on_message=on_message,
+                        on_error=on_error,
+                        on_close=on_close,
+                        on_open=on_open
+                    )
+                    # Add keepalive ping every 10 seconds to prevent timeouts
+                    ws.run_forever(ping_interval=10, ping_timeout=5)
+                except Exception as e:
+                    print(f"❌ WebSocket thread error: {e}")
+                print("⏳ Reconnecting to WebSocket in 5s...")
+                time.sleep(5)
+    
+        print("🚀 Launching WebSocket listener thread...")
+        threading.Thread(target=run_ws, daemon=True).start()
+    
+        # Keep this function alive so Flask doesn’t exit the thread
+        while True:
+            time.sleep(60)
 
 def data_fetcher_all(mode):
     """
@@ -918,6 +928,7 @@ if __name__ == "__main__":
     threading.Thread(target=data_fetcher_all, kwargs={"mode": MODE}, daemon=True).start()
 
     app.run(debug=True, host=DASH_HOST, port=DASH_PORT, use_reloader=False)
+
 
 
 
