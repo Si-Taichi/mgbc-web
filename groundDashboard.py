@@ -6,10 +6,11 @@ import time
 import traceback
 import math
 import serial
-import websocket
+import websockets
 import json
+import asyncio
 from config import NUM_BOARDS, MODE, PORT, BAUDRATE, DASHBOARD_UPDATE_INTERVAL, API_ADDRESS, DASH_HOST, DASH_PORT, BOARD_NAMES
-websocket.enableTrace(True)
+
 app = Dash(__name__, update_title=None, title='kits board UGCS')
 
 def init_board_data():
@@ -885,6 +886,7 @@ if __name__ == "__main__":
     threading.Thread(target=data_fetcher_all, kwargs={"mode": MODE}, daemon=True).start()
 
     app.run(debug=True, host=DASH_HOST, port=DASH_PORT, use_reloader=False)
+
 
 
 
