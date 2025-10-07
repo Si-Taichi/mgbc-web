@@ -285,6 +285,8 @@ class SampleDataGenerator:
             data['phase']
         ])
 
+_srv_for_asgi = WSDeviceData(NUM_BOARDS, host="0.0.0.0", port=8765, debug=False)
+app = _srv_for_asgi.app
 
 if __name__ == "__main__":
     import socket
@@ -295,14 +297,14 @@ if __name__ == "__main__":
     # Find local IP (for your Wi-Fi or LAN)
     hostname = socket.gethostname()
     local_ip = socket.gethostbyname(hostname)
-    ws_url = f"ws://{local_ip}:8765/data"
+    ws_url = f"ws://{local_ip}:8765"
     gcs_url = f"http://{local_ip}:8765/gcs/all"
 
     print("🚀 Starting WebSocket Data Generator...")
     print("---------------------------------------------------")
     print(f"🌐 Local WebSocket URLs:")
-    print(f"   🔹 All devices: {ws_url}")
-    print(f"   🔹 Single device (example): {ws_url}/0")
+    print(f"   🔹 All devices: {ws_url}/gcs/all")
+    print(f"   🔹 Single device (example): {ws_url}/gcs/0")
     print()
     print(f"📡 REST API:")
     print(f"   🔹 All data: {gcs_url}")
