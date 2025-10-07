@@ -65,9 +65,9 @@ def parse_csv_string(csv_string):
             lon = float(parts[4].strip())
             temp = float(parts[5].strip())
             pressure = float(parts[6].strip())
-            humidity = float(parts[7].strip())
-            alt = float(parts[8].strip())
-            phase = parts[9].strip()
+            humidity = float(parts[8].strip())
+            alt = float(parts[9].strip())
+            phase = parts[10].strip()
             
             return {
                 "LIS331DLH axis x": [x],
@@ -212,30 +212,66 @@ def data_fetcher_websocket():
     ws_url = API_ADDRESS
     print(f"🌐 Connecting to WebSocket at {ws_url}")
 
-    def on_message(ws, message):
-        global all_board, board_list
-        try:
-            # Handle message: could be CSV or JSON
-            if message.strip().startswith("{"):
-                data = json.loads(message)
-                # If server sends {"id": "0", "data": "x,y,z,..."}
-                if "data" in data:
-                    board_id = str(data.get("id", "0"))
-                    csv_string = data["data"]
-                else:
-                    # Fallback: assume dict of {board_id: csv_string}
-                    for board_id, csv_string in data.items():
-                        update_board_from_csv(board_id, csv_string)
-                    return
+def on_message(ws, message):
+    # This will still be called for text frames — but we'll log everything in on_data too
+    print("on_message() called. repr:")
+    print(repr(message))
+    try:
+        # if message is bytes (shouldn't be here), ensure string
+        if isinstance(message, (bytes, bytearray)):
+            text = message.decode("utf-8", errors="ignore")
+        else:
+            text = message
+        # keep existing handling: JSON vs CSV
+        if text.strip().startswith("{"):
+            try:
+                data = json.loads(text)
+            except Exception as e:
+                print("⚠️ JSON parse failed:", e)
+                return
+            if "data" in data:
+                board_id = str(data.get("id", "0"))
+                csv_string = data["data"]
             else:
-                # Raw CSV from single board
-                board_id = "0"
-                csv_string = message
+                for board_id, csv_string in data.items():
+                    update_board_from_csv(board_id, csv_string)
+                return
+        else:
+            board_id = "0"
+            csv_string = text
+        update_board_from_csv(board_id, csv_string)
+    except Exception as e:
+        print("⚠️ on_message exception:", repr(e))
+        traceback.print_exc()
 
-            update_board_from_csv(board_id, csv_string)
+def on_data(ws, message, message_type, fin):
+    # Called for all frame types — ensure both text & binary go to on_message
+    try:
+        if message_type == websocket.ABNF.OPCODE_BINARY:
+            print(f"on_data: BINARY frame (len={len(message)})")
+            try:
+                text = message.decode("utf-8", errors="ignore")
+                on_message(ws, text)
+            except Exception as e:
+                print("⚠️ Failed to decode binary:", e)
+        elif message_type == websocket.ABNF.OPCODE_TEXT:
+            # message here might already be str or bytes depending on client version — show repr
+            print(f"on_data: TEXT frame repr: {repr(message)}")
+            if isinstance(message, (bytes, bytearray)):
+                on_message(ws, message.decode("utf-8", errors="ignore"))
+            else:
+                on_message(ws, message)
+        else:
+            print(f"on_data: other opcode={message_type}, fin={fin}, repr={repr(message)}")
+    except Exception as e:
+        print("⚠️ on_data exception:", e)
+        traceback.print_exc()
 
-        except Exception as e:
-            print(f"⚠️ WebSocket message error: {e}")
+def on_ping(ws, message):
+    print("<< PING from server:", repr(message))
+
+def on_pong(ws, message):
+    print("<< PONG from server:", repr(message))
 
     def update_board_from_csv(board_id, csv_string):
         print(f"🔹 Raw message from board {board_id}: {csv_string}")
@@ -927,6 +963,7 @@ if __name__ == "__main__":
     threading.Thread(target=data_fetcher_all, kwargs={"mode": MODE}, daemon=True).start()
 
     app.run(debug=True, host=DASH_HOST, port=DASH_PORT, use_reloader=False)
+
 
 
 
