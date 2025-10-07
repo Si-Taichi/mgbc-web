@@ -13,7 +13,7 @@ def start_api_server():
     print("🚀 Starting API server...")
     try:
         proc = subprocess.Popen([
-            sys.executable, 'ws_server.py'
+            sys.executable, 'wss_server.py'
         ])
         return proc
     except Exception as e:
@@ -40,7 +40,7 @@ def main():
     print("="*70)
     
     # Check if files exist
-    required_files = ['ws_server.py', 'groundDashboard.py', 'config.py']
+    required_files = ['wss_server.py', 'groundDashboard.py', 'config.py']
     missing_files = [f for f in required_files if not os.path.exists(f)]
     
     if missing_files:
