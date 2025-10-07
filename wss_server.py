@@ -287,8 +287,27 @@ class SampleDataGenerator:
         ])
 
 if __name__ == "__main__":
+    import socket
+
     srv = WSDeviceData(NUM_BOARDS, host="0.0.0.0", port=8765, debug=False)
     generator = SampleDataGenerator(NUM_BOARDS)
+
+    # Find local IP (for your Wi-Fi or LAN)
+    hostname = socket.gethostname()
+    local_ip = socket.gethostbyname(hostname)
+    ws_url = f"ws://{local_ip}:8765/data"
+    gcs_url = f"http://{local_ip}:8765/gcs/all"
+
+    print("🚀 Starting WebSocket Data Generator...")
+    print("---------------------------------------------------")
+    print(f"🌐 Local WebSocket URLs:")
+    print(f"   🔹 All devices: {ws_url}")
+    print(f"   🔹 Single device (example): {ws_url}/0")
+    print()
+    print(f"📡 REST API:")
+    print(f"   🔹 All data: {gcs_url}")
+    print(f"   🔹 Single device (example): {gcs_url.replace('/all', '/0')}")
+    print("---------------------------------------------------")
 
     def sampler():
         start = time.time()
@@ -306,6 +325,9 @@ if __name__ == "__main__":
             msg_count += 1
             time.sleep(0.5)
 
-    print("🚀 Starting WebSocket Data Generator...")
     threading.Thread(target=sampler, daemon=True).start()
     srv.run()
+
+    threading.Thread(target=sampler, daemon=True).start()
+    srv.run()
+
