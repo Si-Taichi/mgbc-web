@@ -6,6 +6,8 @@ import time
 import traceback
 import math
 import serial
+import websocket
+import json
 from config import NUM_BOARDS, MODE, PORT, BAUDRATE, DASHBOARD_UPDATE_INTERVAL, API_ADDRESS, DASH_HOST, DASH_PORT, BOARD_NAMES
 
 app = Dash(__name__, update_title=None, title='kits board UGCS')
@@ -201,6 +203,98 @@ def data_fetcher_serial():
             traceback.print_exc()
             time.sleep(1)
 
+def data_fetcher_websocket():
+    """
+    WebSocket mode to receive real-time telemetry
+    """
+    global all_board, board_list, num_boards, board_names
+    
+    ws_url = API_ADDRESS
+
+    print(f"🌐 Connecting to WebSocket at {ws_url}")
+
+    def on_message(ws, message):
+        global all_board, board_list
+        try:
+            # Handle message: could be CSV or JSON
+            if message.strip().startswith("{"):
+                data = json.loads(message)
+                # If server sends {"id": "0", "data": "x,y,z,..."}
+                if "data" in data:
+                    board_id = str(data.get("id", "0"))
+                    csv_string = data["data"]
+                else:
+                    # Fallback: assume dict of {board_id: csv_string}
+                    for board_id, csv_string in data.items():
+                        update_board_from_csv(board_id, csv_string)
+                    return
+            else:
+                # Raw CSV from single board
+                board_id = "0"
+                csv_string = message
+
+            update_board_from_csv(board_id, csv_string)
+
+        except Exception as e:
+            print(f"⚠️ WebSocket message error: {e}")
+
+    def update_board_from_csv(board_id, csv_string):
+        v = parse_csv_string(csv_string)
+        if not v:
+            return
+
+        if board_id not in board_list:
+            board_list[board_id] = init_board_data()
+
+        board_list[board_id]["x"].append(v["LIS331DLH axis x"][0])
+        board_list[board_id]["y"].append(v["LIS331DLH axis y"][0])
+        board_list[board_id]["z"].append(v["LIS331DLH axis z"][0])
+        board_list[board_id]["lat"].append(v["lc86g lat"][0])
+        board_list[board_id]["lon"].append(v["lc86g lon"][0])
+        board_list[board_id]["Tempurature"].append(v["bme tempurature"][0])
+        board_list[board_id]["Pressure"].append(v["bme pressure"][0])
+        board_list[board_id]["Humidity"].append(v["bme humidity"][0])
+        board_list[board_id]["alt"].append(v["lc86g alt"][0])
+
+        phase_raw = v["phase"][0].upper()
+        if "MAIN" in phase_raw and "DEPLOY" in phase_raw:
+            board_list[board_id]["main_deploy"] = True
+            display_phase = "DESCENT"
+        elif "SECOND" in phase_raw and "DEPLOY" in phase_raw:
+            board_list[board_id]["second_deploy"] = True
+            display_phase = "DESCENT"
+        else:
+            display_phase = phase_raw
+
+        board_list[board_id]["phase"].append(display_phase)
+        board_list[board_id]["time"].append(elapsed_seconds())
+
+    def on_error(ws, error):
+        print(f"❌ WebSocket error: {error}")
+
+    def on_close(ws, close_status_code, close_msg):
+        print("⚠️ WebSocket closed. Attempting reconnect in 5s...")
+        time.sleep(5)
+        data_fetcher_websocket()  # Auto-reconnect
+
+    def on_open(ws):
+        print("✅ WebSocket connected. Listening for data...")
+
+    # Persistent connection loop
+    while True:
+        try:
+            ws = websocket.WebSocketApp(
+                ws_url,
+                on_message=on_message,
+                on_error=on_error,
+                on_close=on_close,
+                on_open=on_open
+            )
+            ws.run_forever()
+        except Exception as e:
+            print(f"❌ WebSocket connection error: {e}")
+            time.sleep(5)
+
 def data_fetcher_all(mode):
     """
     Main data fetcher that routes to appropriate mode
@@ -209,6 +303,9 @@ def data_fetcher_all(mode):
     
     if mode == "serial":
         data_fetcher_serial()
+    elif mode == "websocket":
+        print("📡 Data fetcher running in WebSocket mode...")
+        data_fetcher_websocket()
     elif mode == "api":
         print("📡 Data fetcher running in API mode...")
         print(f"   Endpoint: {API_ADDRESS}/gcs/all")
@@ -806,4 +903,5 @@ if __name__ == "__main__":
     threading.Thread(target=data_fetcher_all, kwargs={"mode": MODE}, daemon=True).start()
 
     app.run(debug=True, host=DASH_HOST, port=DASH_PORT, use_reloader=False)
+
 
