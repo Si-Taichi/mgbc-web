@@ -205,159 +205,77 @@ def data_fetcher_serial():
 
 def data_fetcher_websocket():
     """
-    WebSocket mode to receive real-time telemetry
+    Async WebSocket mode to receive real-time telemetry (non-blocking, reliable)
     """
     global all_board, board_list, num_boards, board_names
 
     ws_url = API_ADDRESS
     print(f"🌐 Connecting to WebSocket at {ws_url}")
 
-    def on_message(ws, message):
-        # This will still be called for text frames — but we'll log everything in on_data too
-        print("on_message() called. repr:")
-        print(repr(message))
-        try:
-            # if message is bytes (shouldn't be here), ensure string
-            if isinstance(message, (bytes, bytearray)):
-                text = message.decode("utf-8", errors="ignore")
-            else:
-                text = message
-            # keep existing handling: JSON vs CSV
-            if text.strip().startswith("{"):
-                try:
-                    data = json.loads(text)
-                except Exception as e:
-                    print("⚠️ JSON parse failed:", e)
-                    return
-                if "data" in data:
-                    board_id = str(data.get("id", "0"))
-                    csv_string = data["data"]
-                else:
-                    for board_id, csv_string in data.items():
-                        update_board_from_csv(board_id, csv_string)
-                    return
-            else:
-                board_id = "0"
-                csv_string = text
-            update_board_from_csv(board_id, csv_string)
-        except Exception as e:
-            print("⚠️ on_message exception:", repr(e))
-            traceback.print_exc()
-    
-    def on_data(ws, message, message_type, fin):
-        # Called for all frame types — ensure both text & binary go to on_message
-        try:
-            if message_type == websocket.ABNF.OPCODE_BINARY:
-                print(f"on_data: BINARY frame (len={len(message)})")
-                try:
-                    text = message.decode("utf-8", errors="ignore")
-                    on_message(ws, text)
-                except Exception as e:
-                    print("⚠️ Failed to decode binary:", e)
-            elif message_type == websocket.ABNF.OPCODE_TEXT:
-                # message here might already be str or bytes depending on client version — show repr
-                print(f"on_data: TEXT frame repr: {repr(message)}")
-                if isinstance(message, (bytes, bytearray)):
-                    on_message(ws, message.decode("utf-8", errors="ignore"))
-                else:
-                    on_message(ws, message)
-            else:
-                print(f"on_data: other opcode={message_type}, fin={fin}, repr={repr(message)}")
-        except Exception as e:
-            print("⚠️ on_data exception:", e)
-            traceback.print_exc()
-    
-    def on_ping(ws, message):
-        print("<< PING from server:", repr(message))
-    
-    def on_pong(ws, message):
-        print("<< PONG from server:", repr(message))
-    
-    def update_board_from_csv(board_id, csv_string):
-        print(f"🔹 Raw message from board {board_id}: {csv_string}")
-
-        v = parse_csv_string(csv_string)
-        if not v:
-            print(f"⚠️ Invalid CSV received from board {board_id}")
-            return
-
-        # Print parsed data summary
-        try:
-            print(
-                f"📥 Parsed data from board {board_id} → "
-                f"Alt={v['lc86g alt'][0]:.2f}m | "
-                f"Lat={v['lc86g lat'][0]:.5f} | "
-                f"Lon={v['lc86g lon'][0]:.5f} | "
-                f"Temp={v['bme tempurature'][0]:.2f}°C | "
-                f"Phase={v['phase'][0]}"
-            )
-        except Exception:
-            # Defensive: if any key missing, still continue to append
-            pass
-
-        if board_id not in board_list:
-            board_list[board_id] = init_board_data()
-
-        board_list[board_id]["x"].append(v["LIS331DLH axis x"][0])
-        board_list[board_id]["y"].append(v["LIS331DLH axis y"][0])
-        board_list[board_id]["z"].append(v["LIS331DLH axis z"][0])
-        board_list[board_id]["lat"].append(v["lc86g lat"][0])
-        board_list[board_id]["lon"].append(v["lc86g lon"][0])
-        board_list[board_id]["Tempurature"].append(v["bme tempurature"][0])
-        board_list[board_id]["Pressure"].append(v["bme pressure"][0])
-        board_list[board_id]["Humidity"].append(v["bme humidity"][0])
-        board_list[board_id]["alt"].append(v["lc86g alt"][0])
-
-        phase_raw = v["phase"][0].upper()
-        if "MAIN" in phase_raw and "DEPLOY" in phase_raw:
-            board_list[board_id]["main_deploy"] = True
-            display_phase = "DESCENT"
-        elif "SECOND" in phase_raw and "DEPLOY" in phase_raw:
-            board_list[board_id]["second_deploy"] = True
-            display_phase = "DESCENT"
-        else:
-            display_phase = phase_raw
-
-        board_list[board_id]["phase"].append(display_phase)
-        board_list[board_id]["time"].append(elapsed_seconds())
-    
-    def on_error(ws, error):
-        print(f"❌ WebSocket error: {error}")
-
-    def on_close(ws, close_status_code, close_msg):
-        print("⚠️ WebSocket closed. The run_ws() thread will attempt reconnects.")
-
-    def on_open(ws):
-        print("✅ WebSocket connected. Listening for data...")
-
-    def run_ws():
-        """Inner thread function that keeps the WebSocket alive and reconnects."""
+    async def ws_listener():
         while True:
             try:
-                ws = websocket.WebSocketApp(
-                    ws_url,
-                    on_message=on_message,
-                    on_error=on_error,
-                    on_close=on_close,
-                    on_open=on_open,
-                    on_data=on_data,
-                    on_ping=on_ping,
-                    on_pong=on_pong
-                )
+                async with websockets.connect(ws_url) as ws:
+                    print("✅ WebSocket connected. Listening for data...")
+                    async for message in ws:
+                        # --- raw message logging ---
+                        print(f"🔹 Raw message: {message.strip()}")
+                        v = parse_csv_string(message)
+                        if not v:
+                            print("⚠️ Invalid CSV received, skipping.")
+                            continue
 
-                ws.run_forever(ping_interval=10, ping_timeout=5)
+                        # --- summary printout ---
+                        print(
+                            f"📥 Parsed → "
+                            f"Alt={v['lc86g alt'][0]:.2f}m | "
+                            f"Lat={v['lc86g lat'][0]:.5f} | "
+                            f"Lon={v['lc86g lon'][0]:.5f} | "
+                            f"Temp={v['bme tempurature'][0]:.2f}°C | "
+                            f"Phase={v['phase'][0]}"
+                        )
+
+                        board_id = "0"
+                        if board_id not in board_list:
+                            board_list[board_id] = init_board_data()
+
+                        board_list[board_id]["x"].append(v["LIS331DLH axis x"][0])
+                        board_list[board_id]["y"].append(v["LIS331DLH axis y"][0])
+                        board_list[board_id]["z"].append(v["LIS331DLH axis z"][0])
+                        board_list[board_id]["lat"].append(v["lc86g lat"][0])
+                        board_list[board_id]["lon"].append(v["lc86g lon"][0])
+                        board_list[board_id]["Tempurature"].append(v["bme tempurature"][0])
+                        board_list[board_id]["Pressure"].append(v["bme pressure"][0])
+                        board_list[board_id]["Humidity"].append(v["bme humidity"][0])
+                        board_list[board_id]["alt"].append(v["lc86g alt"][0])
+
+                        phase_raw = v["phase"][0].upper()
+                        if "MAIN" in phase_raw and "DEPLOY" in phase_raw:
+                            board_list[board_id]["main_deploy"] = True
+                            display_phase = "DESCENT"
+                        elif "SECOND" in phase_raw and "DEPLOY" in phase_raw:
+                            board_list[board_id]["second_deploy"] = True
+                            display_phase = "DESCENT"
+                        else:
+                            display_phase = phase_raw
+
+                        board_list[board_id]["phase"].append(display_phase)
+                        board_list[board_id]["time"].append(elapsed_seconds())
+
             except Exception as e:
-                print(f"❌ WebSocket thread error: {e}")
-            print("⏳ Reconnecting to WebSocket in 5s...")
-            time.sleep(5)
+                print(f"❌ WebSocket connection error: {e}")
+                print("⏳ Reconnecting in 5 seconds...")
+                await asyncio.sleep(5)
 
-# Start the WebSocket listener in a background daemon thread
-print("🚀 Launching WebSocket listener thread...")
-threading.Thread(target=run_ws, daemon=True).start()
+    # Run async listener in its own thread-safe loop
+    def run_loop():
+        asyncio.run(ws_listener())
 
-# Keep this function alive so the thread keeps running
-while True:
-    time.sleep(60)
+    print("🚀 Launching async WebSocket listener thread...")
+    threading.Thread(target=run_loop, daemon=True).start()
+
+    while True:
+        time.sleep(60)
 
 def data_fetcher_all(mode):
     """
@@ -967,6 +885,7 @@ if __name__ == "__main__":
     threading.Thread(target=data_fetcher_all, kwargs={"mode": MODE}, daemon=True).start()
 
     app.run(debug=True, host=DASH_HOST, port=DASH_PORT, use_reloader=False)
+
 
 
 
