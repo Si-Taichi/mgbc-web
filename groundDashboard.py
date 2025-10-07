@@ -210,6 +210,8 @@ def data_fetcher_websocket():
     global all_board, board_list, num_boards, board_names
     
     ws_url = API_ADDRESS
+    if not ws_url.endswith("/gcs/all"):
+        ws_url = ws_url.rstrip("/") + "/gcs/all"
 
     print(f"🌐 Connecting to WebSocket at {ws_url}")
 
@@ -903,5 +905,6 @@ if __name__ == "__main__":
     threading.Thread(target=data_fetcher_all, kwargs={"mode": MODE}, daemon=True).start()
 
     app.run(debug=True, host=DASH_HOST, port=DASH_PORT, use_reloader=False)
+
 
 
