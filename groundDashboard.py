@@ -66,9 +66,9 @@ def parse_csv_string(csv_string):
             lon = float(parts[4].strip())
             temp = float(parts[5].strip())
             pressure = float(parts[6].strip())
-            humidity = float(parts[7].strip())
-            alt = float(parts[8].strip())
-            phase = parts[9].strip()
+            humidity = float(parts[8].strip())
+            alt = float(parts[9].strip())
+            phase = parts[10].strip()
 
             return {
                 "LIS331DLH axis x": [x],
