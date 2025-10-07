@@ -1,4 +1,3 @@
-# wss_server.py
 import threading
 import time
 import random
@@ -286,6 +285,9 @@ class SampleDataGenerator:
             data['phase']
         ])
 
+_app = WSDeviceData(NUM_BOARDS, host="0.0.0.0", port=8765, debug=False)
+app = _app.app
+
 if __name__ == "__main__":
     import socket
 
@@ -327,7 +329,3 @@ if __name__ == "__main__":
 
     threading.Thread(target=sampler, daemon=True).start()
     srv.run()
-
-    threading.Thread(target=sampler, daemon=True).start()
-    srv.run()
-
