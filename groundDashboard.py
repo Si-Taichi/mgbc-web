@@ -206,7 +206,7 @@ def data_fetcher_serial():
 
 def data_fetcher_websocket():
     """
-    Async WebSocket mode to receive real-time telemetry (non-blocking, reliable)
+    Async WebSocket mode with better error handling and authentication
     """
     global all_board, board_list, num_boards, board_names
 
@@ -214,19 +214,34 @@ def data_fetcher_websocket():
     print(f"🌐 Connecting to WebSocket at {ws_url}")
 
     async def ws_listener():
-        while True:
+        retry_count = 0
+        max_retries = 5
+        
+        while retry_count < max_retries:
             try:
-                async with websockets.connect(ws_url) as ws:
+                print(f"🔄 Connection attempt {retry_count + 1}/{max_retries}")
+                
+                async with websockets.connect(
+                    ws_url,
+                    ping_interval=20,
+                    ping_timeout=10,
+                    close_timeout=5,
+                    max_size=10_000_000,
+                    compression=None,  # Disable compression
+                    origin=None  # Don't send Origin header
+                ) as ws:
                     print("✅ WebSocket connected. Listening for data...")
+                    retry_count = 0  # Reset on successful connection
+                    
                     async for message in ws:
-                        # --- raw message logging ---
-                        print(f"🔹 Raw message: {message.strip()}")
+                        # Raw message logging
+                        print(f"📹 Raw message: {message.strip()}")
                         v = parse_csv_string(message)
                         if not v:
                             print("⚠️ Invalid CSV received, skipping.")
                             continue
 
-                        # --- summary printout ---
+                        # Summary printout
                         print(
                             f"📥 Parsed → "
                             f"Alt={v['lc86g alt'][0]:.2f}m | "
@@ -263,10 +278,30 @@ def data_fetcher_websocket():
                         board_list[board_id]["phase"].append(display_phase)
                         board_list[board_id]["time"].append(elapsed_seconds())
 
+            except websockets.exceptions.InvalidStatusCode as e:
+                print(f"❌ WebSocket connection rejected with status code: {e.status_code}")
+                print(f"   Response headers: {e.headers}")
+                retry_count += 1
+                if retry_count >= max_retries:
+                    print("❌ Max retries reached. Please check:")
+                    print("   1. Is the WebSocket server running?")
+                    print("   2. Is the URL correct?")
+                    print("   3. Do you need authentication?")
+                    print("   4. Try switching to 'serial' or 'api' mode in config.py")
+                    return
+                    
+            except websockets.exceptions.InvalidURI as e:
+                print(f"❌ Invalid WebSocket URI: {e}")
+                print("   Check your API_ADDRESS in config.py")
+                return
+                
             except Exception as e:
-                print(f"❌ WebSocket connection error: {e}")
-                print("⏳ Reconnecting in 5 seconds...")
-                await asyncio.sleep(5)
+                print(f"❌ WebSocket connection error: {type(e).__name__}: {e}")
+                retry_count += 1
+                
+            wait_time = min(5 * retry_count, 30)  # Progressive backoff
+            print(f"⏳ Reconnecting in {wait_time} seconds...")
+            await asyncio.sleep(wait_time)
 
     # Run async listener in its own thread-safe loop
     def run_loop():
@@ -886,6 +921,7 @@ if __name__ == "__main__":
     threading.Thread(target=data_fetcher_all, kwargs={"mode": MODE}, daemon=True).start()
 
     app.run(debug=True, host=DASH_HOST, port=DASH_PORT, use_reloader=False)
+
 
 
 
