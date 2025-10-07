@@ -43,6 +43,7 @@ class SharedDataStore:
         with self.lock:
             if board_id not in self.board_list:
                 self.board_list[board_id] = self.init_board_data()
+                print(f"✅ Initialized board {board_id} - {self.board_names.get(board_id, 'Unknown')}")
             if board_id not in self.deployment_history:
                 self.deployment_history[board_id] = {"main_deployed": False, "second_deployed": False}
 
@@ -79,20 +80,25 @@ class SharedDataStore:
 
             self.api_status = "connected"
             self.last_update = time.strftime("%H:%M:%S")
+            
+            # Debug: Print data count every 50 updates
+            data_count = len(self.board_list[board_id]["alt"])
+            if data_count % 50 == 0:
+                print(f"📊 Board {board_id}: {data_count} data points | Phase: {display_phase} | Alt: {parsed_data.get('alt', 0):.1f}m | Main: {self.board_list[board_id]['main_deploy']} | Second: {self.board_list[board_id]['second_deploy']}")
 
     def get_board_status(self, board_id):
-        with self.lock:
-            if board_id not in self.board_list or not self.board_list[board_id]["alt"]:
-                return None
-            b = self.board_list[board_id]
-            return {
-                "name": self.board_names.get(board_id, f"Board {board_id}"),
-                "phase": b["phase"][-1] if b["phase"] else "UNKNOWN",
-                "main_deployed": b["main_deploy"],
-                "second_deployed": b["second_deploy"],
-                "altitude": b["alt"][-1] if b["alt"] else 0.0,
-                "last_seen": time.time()
-            }
+        """Get board status without lock (caller should have lock)"""
+        if board_id not in self.board_list or not self.board_list[board_id]["alt"]:
+            return None
+        b = self.board_list[board_id]
+        return {
+            "name": self.board_names.get(board_id, f"Board {board_id}"),
+            "phase": b["phase"][-1] if b["phase"] else "UNKNOWN",
+            "main_deployed": b["main_deploy"],
+            "second_deployed": b["second_deploy"],
+            "altitude": b["alt"][-1] if b["alt"] else 0.0,
+            "last_seen": time.time()
+        }
 
     def get_all_board_ids(self):
         with self.lock:
@@ -119,9 +125,9 @@ def parse_csv_string(csv_string):
             "lon": float(parts[4]),
             "temp": float(parts[5]),
             "pressure": float(parts[6]),
-            "humidity": float(parts[7]),
-            "alt": float(parts[8]),
-            "phase": parts[9].strip()
+            "humidity": float(parts[8]),
+            "alt": float(parts[9]),
+            "phase": parts[10].strip()
         }
     except Exception:
         return None
@@ -569,6 +575,12 @@ def update_board_options_deploy(n, current_value):
     options = generate_board_options()
     source_text = f"Serial Port {PORT} @ {BAUDRATE} baud"
     
+    # Debug output every 10 intervals
+    if n % 10 == 0:
+        with shared.lock:
+            print(f"🔍 Deploy Dashboard: Found {len(shared.board_list)} boards - IDs: {list(shared.board_list.keys())}")
+            print(f"   Current selection: {current_value}, Available options: {[opt['value'] for opt in options]}")
+    
     if current_value is None and options:
         return options, options[0]["value"], source_text
     
@@ -622,13 +634,22 @@ def update_dashboard_deploy(n, selected_board):
                 html.H3("Select a Board", style={"fontSize": "24px", "fontWeight": "bold", "color": "white", "marginBottom": "10px"}),
             ], style={"textAlign": "center", "padding": "80px 20px", "color": "white"})
         elif selected_board in shared.board_list:
+            # Get status directly from board_list (we already have the lock)
             status = shared.get_board_status(selected_board)
             if status:
                 card = create_status_card_deploy(selected_board, status)
             else:
-                card = html.Div([html.P("No data available", style={"color": "white", "textAlign": "center"})])
+                card = html.Div([
+                    html.Div("⏳", style={"fontSize": "64px", "marginBottom": "20px"}),
+                    html.H3("Loading Data...", style={"fontSize": "24px", "fontWeight": "bold", "color": "white", "marginBottom": "10px"}),
+                    html.P("Waiting for sensor data", style={"color": "#9CA3AF"})
+                ], style={"textAlign": "center", "padding": "80px 20px", "color": "white"})
         else:
-            card = html.Div([html.P("Board not found", style={"color": "white", "textAlign": "center"})])
+            card = html.Div([
+                html.Div("❓", style={"fontSize": "64px", "marginBottom": "20px"}),
+                html.H3("Board Not Found", style={"fontSize": "24px", "fontWeight": "bold", "color": "white", "marginBottom": "10px"}),
+                html.P(f"Board {selected_board} is not available", style={"color": "#9CA3AF"})
+            ], style={"textAlign": "center", "padding": "80px 20px", "color": "white"})
         
         return card, status_indicator_style, status_text, update_text, active_count
 
