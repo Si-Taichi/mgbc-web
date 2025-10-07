@@ -36,9 +36,9 @@ def parse_csv_string(csv_string):
             "lon": float(parts[4]),
             "temp": float(parts[5]),
             "pressure": float(parts[6]),
-            "humidity": float(parts[7]),
-            "alt": float(parts[8]),
-            "phase": parts[9].strip().upper()
+            "humidity": float(parts[8]),
+            "alt": float(parts[9]),
+            "phase": parts[10].strip().upper()
         }
     except Exception as e:
         print(f"Parse error: {e}")
@@ -789,9 +789,9 @@ if __name__ == "__main__":
         print(f"API Endpoints:")
         print(f"  - {API_ADDRESS}/gcs/all")
         print(f"  - {API_ADDRESS}/gcs/<device_id>")
-    print(f"Dashboard: http://{DASH_HOST}:{DASH_PORT}")
+    print(f"Dashboard: http://local:3000")
     print("="*60)
     
     threading.Thread(target=fetch_deployment_status, daemon=True).start()
     
-    app.run(debug=True, host=DASH_HOST, port=DASH_PORT, use_reloader=False)
+    app.run(debug=True, host='localhost', port='3000', use_reloader=False)
