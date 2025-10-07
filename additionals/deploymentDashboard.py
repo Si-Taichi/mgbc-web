@@ -4,7 +4,9 @@ import threading
 import time
 import serial
 import traceback
-from config import API_ADDRESS, DASH_HOST, DASH_PORT, BOARD_NAMES, NUM_BOARDS, MODE, PORT, BAUDRATE
+import websockets
+import asyncio
+from config import API_ADDRESS, DASH_HOST, DASH_PORT, BOARD_NAMES, NUM_BOARDS, MODE, PORT, BAUDRATE, WSS_ADDRESS
 
 app = Dash(__name__, update_title=None, title='Deployment Status Monitor')
 
@@ -16,7 +18,7 @@ num_boards = NUM_BOARDS
 board_names = BOARD_NAMES
 
 def parse_csv_string(csv_string):
-    """Parse CSV string from API or Serial"""
+    """Parse CSV string from API, Serial, or WebSocket"""
     try:
         parts = csv_string.strip().split(",")
         
@@ -41,6 +43,137 @@ def parse_csv_string(csv_string):
     except Exception as e:
         print(f"Parse error: {e}")
         return None
+
+def fetch_deployment_status_websocket():
+    """
+    Async WebSocket mode - receives data from all boards
+    """
+    global board_statuses, api_status, last_update, deployment_history, num_boards, board_names
+
+    ws_url = WSS_ADDRESS + "/gcs/all"
+    print(f"🌐 Connecting to WebSocket at {ws_url}")
+    print(f"📊 Expecting data from {NUM_BOARDS} boards")
+
+    async def ws_listener():
+        retry_count = 0
+        max_retries = 5
+        
+        while retry_count < max_retries:
+            try:
+                print(f"🔄 Connection attempt {retry_count + 1}/{max_retries}")
+                
+                async with websockets.connect(
+                    ws_url,
+                    ping_interval=20,
+                    ping_timeout=10,
+                    close_timeout=5,
+                    max_size=10_000_000,
+                    compression=None,
+                    origin=None
+                ) as ws:
+                    print("✅ WebSocket connected. Listening for deployment data...")
+                    retry_count = 0
+                    api_status = "connected"
+                    
+                    message_count = 0
+                    
+                    async for message in ws:
+                        message_count += 1
+                        
+                        # Parse the CSV
+                        parsed_data = parse_csv_string(message)
+                        if not parsed_data:
+                            print(f"⚠️ Invalid CSV received (message #{message_count}), skipping.")
+                            continue
+
+                        # Determine which board this data is from
+                        # The server publishes in order: board 0, 1, 2, ... n-1
+                        board_id = str(message_count % NUM_BOARDS)
+                        
+                        phase = parsed_data["phase"]
+                        
+                        # Initialize deployment history for this board
+                        if board_id not in deployment_history:
+                            deployment_history[board_id] = {
+                                "main_deployed": False,
+                                "second_deployed": False
+                            }
+                            board_name = board_names.get(int(board_id), f"Board {board_id}")
+                            print(f"✅ Tracking deployment for {board_name}")
+                        
+                        # Check for deployment events
+                        if "MAIN" in phase and "DEPLOY" in phase:
+                            if not deployment_history[board_id]["main_deployed"]:
+                                deployment_history[board_id]["main_deployed"] = True
+                                board_name = board_names.get(int(board_id), f"Board {board_id}")
+                                print(f"🪂 {board_name}: Main parachute deployed!")
+                        
+                        if "SECOND" in phase and "DEPLOY" in phase:
+                            if not deployment_history[board_id]["second_deployed"]:
+                                deployment_history[board_id]["second_deployed"] = True
+                                board_name = board_names.get(int(board_id), f"Board {board_id}")
+                                print(f"🪂 {board_name}: Secondary parachute deployed!")
+                        
+                        # Update board status
+                        board_statuses[board_id] = {
+                            "name": board_names.get(int(board_id), f"Board {board_id}"),
+                            "phase": phase,
+                            "main_deployed": deployment_history[board_id]["main_deployed"],
+                            "second_deployed": deployment_history[board_id]["second_deployed"],
+                            "altitude": parsed_data["alt"],
+                            "last_seen": time.time()
+                        }
+                        
+                        api_status = "connected"
+                        last_update = time.strftime("%H:%M:%S")
+                        
+                        # Log periodically for each board
+                        if message_count % (NUM_BOARDS * 20) == 0:
+                            board_name = board_names.get(int(board_id), f"Board {board_id}")
+                            print(
+                                f"📥 {board_name}: "
+                                f"Alt={parsed_data['alt']:.2f}m | "
+                                f"Phase={phase} | "
+                                f"Main={'✓' if deployment_history[board_id]['main_deployed'] else '✗'} | "
+                                f"Second={'✓' if deployment_history[board_id]['second_deployed'] else '✗'}"
+                            )
+
+            except websockets.exceptions.InvalidStatusCode as e:
+                print(f"❌ WebSocket connection rejected with status code: {e.status_code}")
+                print(f"   Response headers: {e.headers}")
+                retry_count += 1
+                api_status = "error"
+                if retry_count >= max_retries:
+                    print("❌ Max retries reached. Please check:")
+                    print("   1. Is the WebSocket server running?")
+                    print("   2. Is the URL correct?")
+                    print("   3. Try switching to 'api' or 'serial' mode in config.py")
+                    return
+                    
+            except websockets.exceptions.InvalidURI as e:
+                print(f"❌ Invalid WebSocket URI: {e}")
+                print("   Check your WSS_ADDRESS in config.py")
+                api_status = "error"
+                return
+                
+            except Exception as e:
+                print(f"❌ WebSocket connection error: {type(e).__name__}: {e}")
+                retry_count += 1
+                api_status = "error"
+                
+            wait_time = min(5 * retry_count, 30)
+            print(f"⏳ Reconnecting in {wait_time} seconds...")
+            await asyncio.sleep(wait_time)
+
+    def run_loop():
+        asyncio.run(ws_listener())
+
+    print("🚀 Launching async WebSocket listener thread...")
+    threading.Thread(target=run_loop, daemon=True).start()
+
+    # Keep the main thread alive
+    while True:
+        time.sleep(60)
 
 def fetch_deployment_status_api():
     """Fetch data from API and update board statuses"""
@@ -71,10 +204,16 @@ def fetch_deployment_status_api():
                             }
                         
                         if "MAIN" in phase and "DEPLOY" in phase:
-                            deployment_history[board_id]["main_deployed"] = True
+                            if not deployment_history[board_id]["main_deployed"]:
+                                deployment_history[board_id]["main_deployed"] = True
+                                board_name = board_names.get(int(board_id), f"Board {board_id}")
+                                print(f"🪂 {board_name}: Main parachute deployed!")
                         
                         if "SECOND" in phase and "DEPLOY" in phase:
-                            deployment_history[board_id]["second_deployed"] = True
+                            if not deployment_history[board_id]["second_deployed"]:
+                                deployment_history[board_id]["second_deployed"] = True
+                                board_name = board_names.get(int(board_id), f"Board {board_id}")
+                                print(f"🪂 {board_name}: Secondary parachute deployed!")
                         
                         new_statuses[board_id] = {
                             "name": board_names.get(int(board_id), f"Board {board_id}"),
@@ -163,12 +302,14 @@ def fetch_deployment_status_serial():
                 }
             
             if "MAIN" in phase and "DEPLOY" in phase:
-                deployment_history[board_id]["main_deployed"] = True
-                print(f"🪂 Main parachute deployed!")
+                if not deployment_history[board_id]["main_deployed"]:
+                    deployment_history[board_id]["main_deployed"] = True
+                    print(f"🪂 Main parachute deployed!")
             
             if "SECOND" in phase and "DEPLOY" in phase:
-                deployment_history[board_id]["second_deployed"] = True
-                print(f"🪂 Secondary parachute deployed!")
+                if not deployment_history[board_id]["second_deployed"]:
+                    deployment_history[board_id]["second_deployed"] = True
+                    print(f"🪂 Secondary parachute deployed!")
             
             board_statuses = {
                 board_id: {
@@ -215,6 +356,9 @@ def fetch_deployment_status():
     """Main fetcher that routes to appropriate mode"""
     if MODE == "serial":
         fetch_deployment_status_serial()
+    elif MODE == "websocket":
+        print("📡 Data fetcher running in WebSocket mode...")
+        fetch_deployment_status_websocket()
     elif MODE == "api":
         fetch_deployment_status_api()
     else:
@@ -222,13 +366,13 @@ def fetch_deployment_status():
 
 def get_phase_color(phase):
     """Get color based on flight phase"""
-    if phase == "GROUND":
+    if phase == "GROUND" or phase == "IDLE":
         return "#4B5563"
-    elif phase == "RISING":
+    elif phase == "RISING" or phase == "LAUNCH":
         return "#F97316"
     elif phase == "COASTING":
         return "#DC2626"
-    elif "DEPLOY" in phase:
+    elif "DEPLOY" in phase or phase == "DESCENT":
         return "#3B82F6"
     elif phase == "LANDED":
         return "#10B981"
@@ -376,8 +520,10 @@ def update_board_options(n, current_value):
     
     if MODE == "serial":
         source_text = f"Serial Port {PORT} @ {BAUDRATE} baud"
+    elif MODE == "websocket":
+        source_text = f"WebSocket: {WSS_ADDRESS}/gcs/all"
     else:
-        source_text = f"{API_ADDRESS}/gcs/all"
+        source_text = f"API: {API_ADDRESS}/gcs/all"
     
     if current_value is None and options:
         return options, options[0]["value"], source_text
@@ -402,10 +548,20 @@ def update_board_options(n, current_value):
 def update_dashboard(n, selected_board):
     if api_status == "connected":
         status_color = "#10B981"
-        status_text = "Serial Connected" if MODE == "serial" else "API Connected"
+        if MODE == "serial":
+            status_text = "Serial Connected"
+        elif MODE == "websocket":
+            status_text = "WebSocket Connected"
+        else:
+            status_text = "API Connected"
     else:
         status_color = "#EF4444"
-        status_text = "Serial Disconnected" if MODE == "serial" else "API Disconnected"
+        if MODE == "serial":
+            status_text = "Serial Disconnected"
+        elif MODE == "websocket":
+            status_text = "WebSocket Disconnected"
+        else:
+            status_text = "API Disconnected"
     
     status_indicator_style = {
         "width": "12px",
@@ -439,6 +595,9 @@ def update_dashboard(n, selected_board):
             if MODE == "serial":
                 error_msg = f"Cannot connect to serial port {PORT}"
                 hint_msg = "Make sure the device is connected"
+            elif MODE == "websocket":
+                error_msg = f"Cannot connect to WebSocket server at {WSS_ADDRESS}"
+                hint_msg = "Make sure the WebSocket server is running"
             else:
                 error_msg = f"Cannot connect to API server at {API_ADDRESS}"
                 hint_msg = "Make sure the API server is running"
@@ -623,6 +782,8 @@ if __name__ == "__main__":
     if MODE == "serial":
         print(f"Serial Port: {PORT}")
         print(f"Baud Rate: {BAUDRATE}")
+    elif MODE == "websocket":
+        print(f"WebSocket Endpoint: {WSS_ADDRESS}/gcs/all")
     else:
         print(f"API Endpoints:")
         print(f"  - {API_ADDRESS}/gcs/all")
