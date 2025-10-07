@@ -6,14 +6,14 @@ import subprocess
 import time
 import sys
 import os
-from config import API_ADDRESS, DASH_HOST, DASH_PORT
+from config import API_HOST, API_PORT, DASH_HOST, DASH_PORT
 
 def start_api_server():
     """Start the API server"""
     print("🚀 Starting API server...")
     try:
         proc = subprocess.Popen([
-            sys.executable, 'wss_server.py'
+            sys.executable, 'ws_server.py'
         ])
         return proc
     except Exception as e:
@@ -40,7 +40,7 @@ def main():
     print("="*70)
     
     # Check if files exist
-    required_files = ['wss_server.py', 'groundDashboard.py', 'config.py']
+    required_files = ['ws_server.py', 'groundDashboard.py', 'config.py']
     missing_files = [f for f in required_files if not os.path.exists(f)]
     
     if missing_files:
@@ -49,7 +49,7 @@ def main():
         return
     
     print("📋 System Architecture:")
-    print(f"   API Server (Address {API_ADDRESS}) → HTTP REST API → Dashboard (Port {DASH_PORT})")
+    print(f"   API Server (Port {API_PORT}) → HTTP REST API → Dashboard (Port {DASH_PORT})")
     print()
     
     # Start API server
@@ -70,8 +70,10 @@ def main():
     print("="*70)
     print("✅ SYSTEM STARTED SUCCESSFULLY!")
     print("="*70)
-    print(f"🔧 API Server:        {API_ADDRESS}")
-    print(f"   📊 All devices:    {API_ADDRESS}/gcs/all")
+    print(f"🔧 API Server:        http://{API_HOST}:{API_PORT}")
+    print(f"   📄 Status page:    http://{API_HOST}:{API_PORT}/")
+    print(f"   📊 All devices:    http://{API_HOST}:{API_PORT}/gcs/all")
+    print(f"   🏥 Health check:   http://{API_HOST}:{API_PORT}/health")
     print()
     print(f"📊 Groundboard:       http://{DASH_HOST}:{DASH_PORT}")
     print("   🎯 Live dashboard")

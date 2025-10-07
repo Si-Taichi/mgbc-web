@@ -1,7 +1,0 @@
-The files that are include in here are for additional purposes.
-
-- deploymentDashboard.py
-  - This file work similairly to the groundDashboard.py file, to run it with simulated data go on to the run_api_system.py and in the line 30 : change the 'groundDashboard.py' to 'deployDashboard.py' and save the file,
-    then you can type in terminal : | python run_api_system.py | and it will run the files.
-  - This file can also be run by itself by getting data from api that is not from ws_server.py .
-  - The requirements to use this file is the almost same from the groundDashboard.py but some of the libraries are not used not this file.
