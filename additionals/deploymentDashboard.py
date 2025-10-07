@@ -46,7 +46,8 @@ def parse_csv_string(csv_string):
 
 def fetch_deployment_status_websocket():
     """
-    Async WebSocket mode - receives data from all boards
+    Async WebSocket mode - receives data from all boards using /gcs/all
+    Matches the groundDashboard.py implementation
     """
     global board_statuses, api_status, last_update, deployment_history, num_boards, board_names
 
@@ -64,12 +65,11 @@ def fetch_deployment_status_websocket():
                 
                 async with websockets.connect(
                     ws_url,
-                    ping_interval=20,
-                    ping_timeout=10,
-                    close_timeout=5,
+                    ping_interval=None,
+                    open_timeout=None,
+                    close_timeout=None,
                     max_size=10_000_000,
-                    compression=None,
-                    origin=None
+                    compression=None
                 ) as ws:
                     print("✅ WebSocket connected. Listening for deployment data...")
                     retry_count = 0
@@ -86,7 +86,7 @@ def fetch_deployment_status_websocket():
                             print(f"⚠️ Invalid CSV received (message #{message_count}), skipping.")
                             continue
 
-                        # Determine which board this data is from
+                        # CRITICAL: Determine which board this data is from
                         # The server publishes in order: board 0, 1, 2, ... n-1
                         board_id = str(message_count % NUM_BOARDS)
                         
@@ -127,7 +127,7 @@ def fetch_deployment_status_websocket():
                         api_status = "connected"
                         last_update = time.strftime("%H:%M:%S")
                         
-                        # Log periodically for each board
+                        # Log periodically
                         if message_count % (NUM_BOARDS * 20) == 0:
                             board_name = board_names.get(int(board_id), f"Board {board_id}")
                             print(
@@ -784,6 +784,7 @@ if __name__ == "__main__":
         print(f"Baud Rate: {BAUDRATE}")
     elif MODE == "websocket":
         print(f"WebSocket Endpoint: {WSS_ADDRESS}/gcs/all")
+        print(f"Expected Boards: {NUM_BOARDS}")
     else:
         print(f"API Endpoints:")
         print(f"  - {API_ADDRESS}/gcs/all")
