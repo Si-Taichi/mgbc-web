@@ -241,16 +241,22 @@ def data_fetcher_websocket():
             print(f"⚠️ WebSocket message error: {e}")
 
     def update_board_from_csv(board_id, csv_string):
+        print(f"🔹 Raw message from board {board_id}: {csv_string}")
+
         v = parse_csv_string(csv_string)
         if not v:
-            print(f"⚠️ Invalid CSV received from board {board_id}: {csv_string}")
+            print(f"⚠️ Invalid CSV received from board {board_id}")
             return
-
-        print(f"📥 Parsed data from board {board_id}: "
-              f"Alt={v['lc86g alt'][0]:.2f}m, "
-              f"Lat={v['lc86g lat'][0]:.5f}, "
-              f"Lon={v['lc86g lon'][0]:.5f}, "
-              f"Phase={v['phase'][0]}")
+    
+        # Print parsed data summary
+        print(
+            f"📥 Parsed data from board {board_id} → "
+            f"Alt={v['lc86g alt'][0]:.2f}m | "
+            f"Lat={v['lc86g lat'][0]:.5f} | "
+            f"Lon={v['lc86g lon'][0]:.5f} | "
+            f"Temp={v['bme tempurature'][0]:.2f}°C | "
+            f"Phase={v['phase'][0]}"
+        )
 
         if board_id not in board_list:
             board_list[board_id] = init_board_data()
@@ -912,6 +918,7 @@ if __name__ == "__main__":
     threading.Thread(target=data_fetcher_all, kwargs={"mode": MODE}, daemon=True).start()
 
     app.run(debug=True, host=DASH_HOST, port=DASH_PORT, use_reloader=False)
+
 
 
 
