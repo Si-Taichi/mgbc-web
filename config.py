@@ -27,7 +27,7 @@ BOARD_NAMES = {
 
 #Mode Configuration
 
-MODE = "api" #"serial"
+MODE = "api" #"serial" #"websocket"
 
 # Serial mode Configurations
 
@@ -39,7 +39,7 @@ BAUDRATE = "9600"
 # ==========================================
 
 # API Server settings
-API_ADDRESS = "http://localhost:5000"
+API_ADDRESS = "wss://camp-2025.spaceac.tech"
 
 # Dashboard settings
 DASH_HOST = "localhost"
@@ -136,4 +136,5 @@ if __name__ == '__main__':
         name = BOARD_NAMES.get(i, f"Board {i}")
         print(f"  {i}: {name}")
     print("\nTo change the number of boards, edit NUM_BOARDS in this file.")
+
 
