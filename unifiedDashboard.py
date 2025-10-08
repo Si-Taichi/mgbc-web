@@ -125,9 +125,9 @@ def parse_csv_string(csv_string):
             "lon": float(parts[4]),
             "temp": float(parts[5]),
             "pressure": float(parts[6]),
-            "humidity": float(parts[8]),
-            "alt": float(parts[9]),
-            "phase": parts[10].strip()
+            "humidity": float(parts[7]),
+            "alt": float(parts[8]),
+            "phase": parts[9].strip()
         }
     except Exception:
         return None
@@ -724,3 +724,4 @@ if __name__ == "__main__":
     
     # Start deployment dashboard in main thread
     run_deploy()
+
